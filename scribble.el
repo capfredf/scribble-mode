@@ -2,25 +2,10 @@
 ;; $Id: scribble.el,v 1.49 2015/11/03 17:54:56 user Exp $
 ;; Package-Requires: ((emacs "29.1") (racket-mode "20250528"))
 
-(defconst scribble-mode-title   "Racket Scribble Emacs Mode")
-(defconst scribble-mode-version "0.6")
-(defconst scribble-mode-date    "2016-02-19")
-(defconst scribble-mode-web     "http://www.neilvandyke.org/scribble-emacs/")
+;; This minor mode is inspired by the original scribble-mode by Neil Van Dyke (see https://www.neilvandyke.org/scribble-emacs/).
 
-(defconst scribble-mode-legal-notices
-  "Copyright (c) 2011, 2013, 2015, 2016 Neil Van Dyke.  This program is Free
-Software; you can redistribute it and/or modify it under the terms of the GNU
-Lesser General Public License as published by the Free Software Foundation;
-either version 3 of the License (LGPL 3), or (at your option) any later
-version. This program is distributed in the hope that it will be useful, but
-without any warranty; without even the implied warranty of merchantability or
-fitness for a particular purpose.  See http://www.gnu.org/licenses/ for
-details.  For other licenses and consulting, please contact the author.")
-
-;; TODO: !!! 2016-02-19 Recover documentation from old PLaneT package.
-
-;; Note: Changes to above info must be reflected in "scribble-emacs.scrbl"
-;; and "info.rkt".
+(defconst scribble-minor-mode-title   "Racket Scribble Emacs Minor Mode")
+(defconst scribble-minor-mode-version "0.1")
 
 ;;-------------------------------------------------------------------- Requires
 
@@ -31,7 +16,7 @@ details.  For other licenses and consulting, please contact the author.")
 
 (defgroup scribble
   nil
-  "Racket Scribble Emacs Mode"
+  "Racket Scribble Emacs Minor Mode"
   :group 'wp
   :prefix "scribble-")
 
@@ -41,27 +26,27 @@ details.  For other licenses and consulting, please contact the author.")
   :group 'scribble)
 
 (defface scribble-title-face
-  '((t :family "DejaVu Serif" :height 2.0736 :slant italic))
+  '((t :height 2.0736 :slant italic))
   "Face for titles in Scribble mode."
   :group 'scribble)
 
 (defface scribble-section-heading-face
-  '((t :family "DejaVu Serif" :height 2.0736 :weight bold))
+  '((t :height 2.0736 :weight bold))
   "Face for section headings in Scribble mode."
   :group 'scribble)
 
 (defface scribble-subsection-heading-face
-  '((t :family "DejaVu Serif" :height 1.728 :weight bold))
+  '((t :height 1.728 :weight bold))
   "Face for subsection headings in Scribble mode."
   :group 'scribble)
 
 (defface scribble-subsubsection-heading-face
-  '((t :family "DejaVu Serif" :height 1.44 :weight bold))
+  '((t :height 1.44 :weight bold))
   "Face for subsubsection headings in Scribble mode."
   :group 'scribble)
 
 (defface scribble-sub*section-heading-face
-  '((t :family "DejaVu Serif" :height 1.2 :weight bold))
+  '((t :height 1.2 :weight bold))
   "Face for deep-subsection headings in Scribble mode."
   :group 'scribble)
 
@@ -81,7 +66,7 @@ details.  For other licenses and consulting, please contact the author.")
   :group 'scribble)
 
 (defface scribble-tt-face
-  '((t  :family "DejaVu Sans Mono"))
+  '((t :inherit fixed-pitch))
   "Face for @tt in Scribble mode."
   :group 'scribble)
 
@@ -123,342 +108,48 @@ details.  For other licenses and consulting, please contact the author.")
 
 ;;-------------------------------------------------------------- Scribble Forms
 
-(defsubst scribble-get-form-name (form) (aref form 0))
-(defsubst scribble-get-form-args (form) (aref form 1))
-(defsubst scribble-get-form-type (form) (aref form 2))
-(defsubst scribble-get-form-face (form) (aref form 3))
-
-;; TODO: Maybe make types be strings.
-
-(defsubst scribble-get-formarg-kind    (arg) (aref arg 0))
-(defsubst scribble-get-formarg-name    (arg) (aref arg 1))
-(defsubst scribble-get-formarg-type    (arg) (aref arg 2))
-(defsubst scribble-get-formarg-default (arg) (aref arg 3))
-
-;; Note: The information is from Racket 5.0.2 Scribble documentation.
-
-(defconst scribble-style-form-type
-  '(or/c style? f string? symbol? (listof symbol?)))
-
-(defconst scribble-optional-style-form-arg
-  `[k style ,scribble-style-form-type "#f"])
-
-(defconst scribble-optional-underline?-form-arg
-  `[k underline? any/c "#t"])
-
-(defconst scribble-optional-tag-form-arg
-  `[k tag (or/c false/c string? (listof string?)) "#f"])
-
-(defconst scribble-heading-form-args
-  `(,scribble-optional-tag-form-arg
-    [k tag-prefix (or/c false/c string? module-path?) "#f"]
-    ,scribble-optional-style-form-arg))
-
-;; TODO: Support more than just "scribble/base".
-
-(defconst scribble-base-forms
-  `(
-    ;; scribble/base
-    ;; file:///usr/local/racket-5.0.2/share/racket/doc/scribble/base.html
-
-    [title (,@scribble-heading-form-args
-            [k version (or/c string? false/c) "#f"]
-            [p -       pre-content?           -]
-            ...)
-           title-decl?
-           scribble-title-face]
-    [section       (,@scribble-heading-form-args
-                    [p - pre-content? -]
-                    ...)
-                   part-start?
-                   scribble-section-heading-face]
-    [subsection    (,@scribble-heading-form-args
-                    [p - pre-content? -]
-                    ...)
-                   part-start?
-                   scribble-subsection-heading-face]
-    [subsubsection (,@scribble-heading-form-args
-                    [p - pre-content? -]
-                    ...)
-                   part-start?
-                   scribble-subsubsection-heading-face]
-    [sub*section   (,@scribble-heading-form-args
-                    [p - pre-content? -]
-                    ...)
-                   part-start?
-                   scribble-sub*section-heading-face]
-    [author ([p - content? -])
-            block?
-            nil]
-    [author+email ([p author     elem    -]
-                   [p email      string? -]
-                   [k obfuscate? any/c   "#f"])
-                  element?
-                  nil]
-    [para (,scribble-optional-style-form-arg
-           [p - pre-content? -]
-           ...)
-          paragraph?
-          nil]
-    [nested (,scribble-optional-style-form-arg
-             [p - pre-flow? -]
-             ...)
-            nested-flow?
-            nil]
-    [centered ([p - pre-flow? -]
-               ...)
-              nested-flow?
-              nil]
-    [margin-note ([p - pre-flow? -]
-                  ...)
-                 block?
-                 nil]
-    [margin-note* ([p - pre-content? -]
-                   ...)
-                  element?
-                  nil]
-    [itemlist ([p - item? -]
-               ...
-               ,scribble-optional-style-form-arg)
-              itemization?
-              nil]
-    [item ([p - pre-flow? -]
-           ...)
-          item?
-          nil]
-    [tabular ([p cells (listof (listof (or/c block? content? 'cont))) -]
-              ,scribble-optional-style-form-arg)
-             table?
-             nil]
-    [verbatim ([p indent exact-nonnegative-integer? "0"]
-               [p -      string?                    -]
-               ...)
-              block?
-              nil]
-    [elem ([p - pre-content? -]
-           ...
-           ,scribble-optional-style-form-arg)
-          element?
-          nil]
-    [italic ([p - pre-content? -]
-             ...)
-            element?
-            scribble-italic-face]
-    [bold ([p - pre-content? -]
-           ...)
-          element?
-          scribble-bold-face]
-    [code ([p - pre-content? -]
-           ...)
-          element?
-          nil]
-    [codeblock ([p - pre-content? -]
-                ...)
-               element?
-               nil]
-    [tt ([p - pre-content? -]
-         ...) 
-        element?
-        scribble-tt-face]
-    [subscript ([p - pre-content? -]
-                ...) 
-               element?
-               nil]
-    [superscript ([p - pre-content? -]
-                  ...) 
-                 element?
-                 nil]
-    [smaller ([p - pre-content? -]
-              ...) 
-             element?
-             nil]
-    [larger ([p - pre-content? -]
-             ...) 
-            element?
-            nil]
-    [emph ([p - pre-content? -]
-           ...) 
-          element?
-          scribble-emph-face]
-    [linebreak ()
-               element?
-               nil]
-    [hspace ([p - exact-nonnegative-integer? -])
-            element?
-            nil]
-    [literal ([p - string? -]
-              ...) 
-             element?
-             nil]
-    [image
-     ([p path     (or/c path-string? (cons/c 'collects (listof bytes?))) -]
-      [k scale    real?                "1.0"]
-      [k suffixes (listof (rx "^[.]")) "null"]
-      [p -        pre-content?         -]
-      ...)
-     element?
-     nil]
-    [hyperlink ([p url string?      -]
-                [p -   pre-content? -]
-                ...
-                ,scribble-optional-underline?-form-arg
-                [k style
-                   (or/c style? string? symbol? false/c)
-                   "(if underline? #f \"plainlink\")"])
-               element?
-               scribble-link-text-face]
-    [url ([p dest string? -])
-         element?
-         nil]
-    [secref ([p tag          string                          -]
-             [k doc          (or/c module-path? false/c)     "#f"]
-             [k tag-prefixes (or/c (listof string?) false/c) "#f"]
-             ,scribble-optional-underline?-form-arg)
-            element?
-            scribble-link-text-face]
-    [seclink ([p tag          string?                         -]
-              [k doc          (or/c module-path? false/c)     "#f"]
-              [k tag-prefixes (or/c (listof string?) false/c) "#f"]
-              ,scribble-optional-underline?-form-arg
-              [p -            pre-content?                    -]
-              ...)
-             element?
-             scribble-link-text-face]
-    [other-doc ([p module-path module-path? -]
-                ,scribble-optional-underline?-form-arg)
-               element?
-               nil]
-    [elemtag ([p t (or/c tag? string?) -]
-              [p - pre-content?        -]
-              ...)
-             element?
-             nil]
-    [elemref ([p t (or/c tag? string?) -]
-              [p - pre-content?        -]
-              ...
-              ,scribble-optional-underline?-form-arg)
-             element?
-             nil]
-    [index ([p words (or/c string? (listof string?)) -]
-            [p -     pre-content?                    -]
-            ...)
-           index-element?
-           nil]
-    [index* ([p words         (listof string?) -]
-             [p word-contents (listof list?)   -]
-             [p -             pre-content?     -]
-             ...)
-            index-element?
-            nil]
-    [as-index ([p - pre-content? -]
-               ...)
-              index-element?
-              nil]
-    [section-index ([p word string? -]
-                    ...)
-                   part-index-decl?
-                   nil]
-    [index-section ([k tag (or/c false/c string?) "\"doc-index\""]
-                    ,scribble-optional-tag-form-arg)
-                   part?
-                   nil]
-    [table-of-contents ()
-                       delayed-block?
-                       nil]
-    [local-table-of-contents (,scribble-optional-style-form-arg)
-                             delayed-block?
-                             nil]))
-
-(defconst scribble-manual-forms
-  `(
-
-    [racketblock  ([p - datum? -] ...) any/c nil]
-    [RACKETBLOCK  ([p - datum? -] ...) any/c nil]
-    [racketblock0 ([p - datum? -] ...) any/c nil]
-    [RACKETBLOCK0 ([p - datum? -] ...) any/c nil]
-
-    [racketresultblock  ([p - datum? -] ...) any/c nil]
-    [RACKETRESULTBLOCK  ([p - datum? -] ...) any/c nil]
-    [racketresultblock0 ([p - datum? -] ...) any/c nil]
-    [RACKETRESULTBLOCK0 ([p - datum? -] ...) any/c nil]
-
-    [racketinput ([p - datum? -] ...) any/c nil]
-    [RACKETINPUT ([p - datum? -] ...) any/c nil]
-    
-    [racketmod ([k file string? "#f"]
-                [p -    datum?  -]
-                ...)
-               any/c
-               nil]
-
-    [racket ([p - datum? -] ...) any/c nil]
-    [RACKET ([p - datum? -] ...) any/c nil]
-
-    ;; TODO: For "racketresult" and "racketid", maybe override body faces.
-    [racketresult ([p - datum? -] ...) any/c scribble-racket-result-face]
-    [racketid     ([p - datum? -] ...) any/c nil]
-
-    [racketmodlink ([p - datum?            -]
-                    [p - pre-content-expr? -]
-                    ...)
-                   any/c
-                   nil]
-
-    [litchar ([p - string? -] ...) element? scribble-racket-litchar-face]
-
-    [racketfont        ([p - pre-content? -] ...) element? nil]
-    [racketvalfont     ([p - pre-content? -] ...) element? scribble-racket-value-face]
-    [racketresultfont  ([p - pre-content? -] ...) element? scribble-racket-result-face]
-    [racketidfont      ([p - pre-content? -] ...) element? nil]
-    [racketvarfont     ([p - pre-content? -] ...) element? nil]
-    [racketkeywordfont ([p - pre-content? -] ...) element? nil]
-    [racketparenfont   ([p - pre-content? -] ...) element? nil]
-    [racketmetafont    ([p - pre-content? -] ...) element? nil]
-    [racketerror       ([p - pre-content? -] ...) element? nil]
-    [racketmodfont     ([p - pre-content? -] ...) element? nil]
-    [racketoutputfont  ([p - pre-content? -] ...) element? nil]
-    ;; TODO: Define faces for some of the above?
-
-    ;; TODO: We could use overlays to make "@procedure" content have
-    ;; "#<procedure:" and ">".
-    [procedure         ([p - pre-content? -] ...) element? nil]
-
-    [var  ([p - datum? -] ...) element? nil]
-    [svar ([p - datum? -] ...) element? nil]
-    
-    ;; TODO: Possibly add support for all the "scheme" backword-compatibility
-    ;; identifiers.
-
-    ;; TODO: !!! CONTINUE ADDING AFTER
-    ;; file:///usr/local/racket-5.0.2/share/racket/doc/scribble/scribble_manual_code.html
-
-    ))
-
-(defconst scribble-bnf-forms
-  `([BNF ([p - (cons element? (listof element?)) -] ...) table? nil]
-
-    [nonterm   ([p - pre-content? -] ...) element? scribble-bnf-nonterm-face]
-    [BNF-seq   ([p - element?     -] ...) element? nil]
-    [BNF-group ([p - pre-content? -] ...) element? nil]
-
-    [optional   ([p - pre-content? -] ...) element? nil]
-    [kleenestar ([p - pre-content? -] ...) element? nil]
-    [kleeneplus ([p - pre-content? -] ...) element? nil]
-
-    [kleenerange ([p n any/c        -]
-                  [p m any/c        -]
-                  [p - pre-content? -]
-                  ...)
-                 element?
-                 nil]
-
-    [BNF-alt ([p - element? -] ...) element? nil]
-    [BNF-etc ([p - string? -]) void scribble-comment-face]))
+(defsubst scribble-get-form-name (form) (car form))
+(defsubst scribble-get-form-face (form) (cdr form))
 
 (defconst scribble-forms
-  `(,@scribble-base-forms
-    ,@scribble-manual-forms
-    ,@scribble-bnf-forms))
+  '(
+    ;; scribble/base
+    (title . scribble-title-face)
+    (section . scribble-section-heading-face)
+    (subsection . scribble-subsection-heading-face)
+    (subsubsection . scribble-subsubsection-heading-face)
+    (sub*section . scribble-sub*section-heading-face)
+    (italic . scribble-italic-face)
+    (bold . scribble-bold-face)
+    (tt . scribble-tt-face)
+    (emph . scribble-emph-face)
+    (hyperlink . scribble-link-text-face)
+    (secref . scribble-link-text-face)
+    (seclink . scribble-link-text-face)
+    (author) (author+email) (para) (nested) (centered) (margin-note)
+    (margin-note*) (itemlist) (item) (tabular) (verbatim) (elem) (code)
+    (codeblock) (subscript) (superscript) (smaller) (larger) (linebreak)
+    (hspace) (literal) (image) (url) (other-doc) (elemtag) (elemref) (index)
+    (index*) (as-index) (section-index) (index-section) (table-of-contents)
+    (local-table-of-contents)
+    ;; scribble/manual
+    (racketresult . scribble-racket-result-face)
+    (litchar . scribble-racket-litchar-face)
+    (racketvalfont . scribble-racket-value-face)
+    (racketresultfont . scribble-racket-result-face)
+    (racketblock) (RACKETBLOCK) (racketblock0) (RACKETBLOCK0)
+    (racketresultblock) (RACKETRESULTBLOCK) (racketresultblock0)
+    (RACKETRESULTBLOCK0) (racketinput) (RACKETINPUT) (racketmod) (racket)
+    (RACKET) (racketid) (racketmodlink) (racketfont) (racketidfont)
+    (racketvarfont) (racketkeywordfont) (racketparenfont) (racketmetafont)
+    (racketerror) (racketmodfont) (racketoutputfont) (procedure) (var) (svar)
+    ;; scribble/bnf
+    (nonterm . scribble-bnf-nonterm-face)
+    (BNF-etc . scribble-comment-face)
+    (BNF) (BNF-seq) (BNF-group) (optional) (kleenestar) (kleeneplus)
+    (kleenerange) (BNF-alt))
+  "Scribble forms known to `scribble-minor-mode', as (NAME . FACE).
+When FACE is non-nil, it is applied to the form's body.")
 
 ;;----------------------------------------------------------------------- Imenu
 
@@ -494,16 +185,6 @@ details.  For other licenses and consulting, please contact the author.")
       (error nil))
     (kill-buffer buf)))
 
-;;---------------------------------------------------------------- Web Browsing
-
-(defun scribble-browse-mode-web ()
-  (interactive)
-  (browse-url scribble-mode-web))
-
-;; TODO: Add browsing to Scribble documentation.  First try to find URLs to
-;; their existing documentation (based "~/.racket" and on dir of "racket"
-;; command).  Fall back to public Web version.
-
 ;;----------------------------------------------------------------------- About
 
 (defun scribble-about ()
@@ -512,14 +193,10 @@ details.  For other licenses and consulting, please contact the author.")
    "*About Scribble Mode*"
    (function 
     (lambda ()
-      (insert (propertize scribble-mode-title 'face 'bold)
+      (insert (propertize scribble-minor-mode-title 'face 'bold)
               "\n\n"
               "Version "
-              (propertize scribble-mode-version 'face 'bold)
-              "\n\n"
-              (propertize scribble-mode-web 'face 'bold)
-              "\n\n"
-              scribble-mode-legal-notices
+              (propertize scribble-minor-mode-version 'face 'bold)
               "\n")))))
 
 ;;------------------------------------------------------------------ Minor Mode
@@ -754,9 +431,6 @@ See `scribble-hide-markup-forms'."
     (define-key km [scribble-about]
       '(menu-item "About Scribble Emacs Mode..." scribble-about
                   :help "See information about Scribble Emacs mode"))
-    (define-key km [scribble-browse-mode-web]
-      '(menu-item "Browse Scribble Emacs Mode Web..." scribble-browse-mode-web
-                  :help "Browse Web pages for Scribble Emacs mode"))
     (define-key km [scribble-separator-1]
       '(menu-item "--"))
     (define-key km [scribble-customize]
@@ -820,13 +494,10 @@ Enabled automatically for Scribble langs; see
     (kill-local-variable 'outline-level))
   (font-lock-flush))
 
-;;------------------------------------------------------------------- Auto-Mode
 
 ;;;###autoload
 (unless (assoc "\\.scrbl\\'" auto-mode-alist)
   (push '("\\.scrbl\\'" . racket-hash-lang-mode) auto-mode-alist))
-
-;;--------------------------------------------------------------------- Provide
 
 (provide 'scribble)
 
