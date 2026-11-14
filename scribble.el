@@ -1,6 +1,6 @@
 ;; -*- lexical-binding: t; -*-
 ;; $Id: scribble.el,v 1.49 2015/11/03 17:54:56 user Exp $
-;; Package-Requires: ((emacs "29.1") (racket-mode "20250528"))
+;; Package-Requires: ((emacs "28.1") (transient "0.3.7") (racket-mode "20250528"))
 
 ;; This minor mode is inspired by the original scribble-mode by Neil Van Dyke (see https://www.neilvandyke.org/scribble-emacs/).
 
@@ -11,6 +11,7 @@
 
 (require 'imenu)
 (require 'outline)
+(require 'transient)
 
 ;;---------------------------------------------------------------------- Custom
 
@@ -424,6 +425,137 @@ See `scribble-hide-markup-forms'."
   (scribble--apply-markup-hiding)
   (message "Scribble markup %s" (if scribble-hide-markup "hidden" "shown")))
 
+;; Compile:
+
+(defcustom scribble-view-program
+  (pcase system-type
+    ('darwin "open")
+    ((or 'windows-nt 'ms-dos 'cygwin) nil)
+    (_ "xdg-open"))
+  "External program `scribble-view' uses to open output files.
+When nil, use the system's default handler on Windows, else visit the
+file in Emacs."
+  :type '(choice (string :tag "Program")
+                 (const :tag "Default handler / Emacs" nil))
+  :group 'scribble)
+
+(defcustom scribble-raco-program "raco"
+  "Program used to run \"raco scribble\"."
+  :type 'string
+  :group 'scribble)
+
+(defconst scribble--format-outputs
+  '(("--html"      . ".html")
+    ("--htmls"     . "/index.html")
+    ("--markdown"  . ".md")
+    ("--text"      . ".txt")
+    ("--pdf"       . ".pdf")
+    ("--xelatex"   . ".pdf")
+    ("--lualatex"  . ".pdf")
+    ("--typst-pdf" . ".pdf")
+    ("--latex"     . ".tex")
+    ("--typst"     . ".typ"))
+  "Alist from raco scribble format flags to output file suffixes.")
+
+(defun scribble--source-file ()
+  (or buffer-file-name (user-error "Buffer is not visiting a file")))
+
+(defun scribble--read-directory (prompt initial-input _history)
+  (expand-file-name (read-directory-name prompt nil nil nil initial-input)))
+
+(defun scribble--read-file (prompt initial-input _history)
+  (expand-file-name (read-file-name prompt nil nil t initial-input)))
+
+(defun scribble--expand-args (args)
+  "Split transient's \"--opt=VAL\" ARGS into \"--opt\" \"VAL\" for raco."
+  (mapcan (lambda (arg)
+            (if (string-match "\\`\\([-+][-+][^=]+\\)=\\(.*\\)\\'" arg)
+                (list (match-string 1 arg) (match-string 2 arg))
+              (list arg)))
+          args))
+
+(defun scribble--output-file (args)
+  "Guess the file raco scribble writes for the current buffer given ARGS."
+  (let* ((file (scribble--source-file))
+         (format (seq-find (lambda (a) (assoc a scribble--format-outputs)) args))
+         (suffix (cdr (assoc (or format "--html") scribble--format-outputs)))
+         (dest (or (transient-arg-value "--dest=" args)
+                   (file-name-directory file)))
+         (name (file-name-sans-extension
+                (or (transient-arg-value "--dest-name=" args)
+                    (file-name-nondirectory file)))))
+    (expand-file-name (concat name suffix) dest)))
+
+(defvar-local scribble--last-compile-args nil
+  "Arguments of the last `scribble-compile-run' in this buffer.")
+
+(defun scribble--compile-args ()
+  "Arguments for compiling or viewing the current buffer.
+Inside `scribble-compile', its current arguments; otherwise those of the
+last compile in this buffer, else the saved `scribble-compile' value."
+  (cond ((eq transient-current-command 'scribble-compile)
+         (transient-args 'scribble-compile))
+        (scribble--last-compile-args)
+        ((alist-get 'scribble-compile transient-values))
+        (t '("--typst-pdf"))))
+
+(defun scribble-compile-run (&optional args)
+  "Run raco scribble on the current file with ARGS from `scribble-compile'."
+  (interactive (list (scribble--compile-args)))
+  (setq args (or args (scribble--compile-args)))
+  (let* ((file (scribble--source-file))
+         (default-directory (file-name-directory file)))
+    (setq scribble--last-compile-args args)
+    (compile (mapconcat #'shell-quote-argument
+                        `(,scribble-raco-program "scribble"
+                          ,@(scribble--expand-args args)
+                          ,(file-name-nondirectory file))
+                        " "))))
+
+(defun scribble-view (&optional args)
+  "View the output of compiling the current file with ARGS.
+ARGS default to those of the last compile (see `scribble--compile-args').
+The file is opened with `scribble-view-program'."
+  (interactive (list (scribble--compile-args)))
+  (setq args (or args (scribble--compile-args)))
+  (let ((out (scribble--output-file args)))
+    (unless (file-exists-p out)
+      (user-error "No output yet: %s" out))
+    (cond (scribble-view-program
+           (call-process scribble-view-program nil 0 nil out))
+          ((fboundp 'w32-shell-execute)
+           (w32-shell-execute "open" out))
+          (t (find-file out)))))
+
+;;;###autoload (autoload 'scribble-compile "scribble" nil t)
+(transient-define-prefix scribble-compile ()
+  "Compile the current Scribble file with raco scribble."
+  :incompatible '(("--html" "--htmls" "--markdown" "--text"
+                   "--pdf" "--xelatex" "--lualatex" "--typst-pdf"
+                   "--latex" "--typst"))
+  :value '("--typst-pdf")
+  ["Format"
+   [("h" "HTML"             "--html")
+    ("H" "HTML directory"   "--htmls")
+    ("m" "Markdown"         "--markdown")
+    ("t" "Text"             "--text")]
+   [("p" "PDF via pdfLaTeX" "--pdf")
+    ("x" "PDF via XeLaTeX"  "--xelatex")
+    ("u" "PDF via LuaLaTeX" "--lualatex")
+    ("P" "PDF via Typst"    "--typst-pdf")]
+   [("l" "LaTeX source"     "--latex")
+    ("y" "Typst source"     "--typst")]]
+  ["Options"
+   [("-d" "Output directory" "--dest=" :reader scribble--read-directory)
+    ("-n" "Output name"      "--dest-name=")
+    ("-s" "Extra style file" "++style=" :reader scribble--read-file)]
+   [("-q" "Quiet"            "--quiet")
+    ("-y" "Make (update compiled files)" "--make")
+    ("-e" "Errortrace"       "--errortrace")]]
+  ["Actions"
+   ("c" "Compile"     scribble-compile-run)
+   ("v" "View output" scribble-view)])
+
 ;; Menu and Keymap:
 
 (defvar scribble-minor-mode-menu
@@ -440,6 +572,12 @@ See `scribble-hide-markup-forms'."
       '(menu-item "Hide Markup" scribble-toggle-markup-hiding
                   :button (:toggle . scribble-hide-markup)
                   :help "Hide @bold{...}-style markup, showing only styled text"))
+    (define-key km [scribble-compile]
+      '(menu-item "Compile..." scribble-compile
+                  :help "Compile to HTML, PDF, ... with raco scribble"))
+    (define-key km [scribble-view]
+      '(menu-item "View Output" scribble-view
+                  :help "View the output of the last compile"))
     (define-key km [scribble-wrap-region]
       '(menu-item "Wrap Region in Form..." scribble-wrap-region
                   :help "Wrap the region in @form{...}"))
@@ -447,6 +585,8 @@ See `scribble-hide-markup-forms'."
 
 (defvar scribble-minor-mode-map
   (let ((km (make-sparse-keymap)))
+    (define-key km (kbd "C-c C-b") #'scribble-compile)
+    (define-key km (kbd "C-c C-v") #'scribble-view)
     (define-key km (kbd "C-c C-w") #'scribble-wrap-region)
     (define-key km (kbd "C-c C-x C-m") #'scribble-toggle-markup-hiding)
     (define-key km [menu-bar Scribble] (cons "Scribble" scribble-minor-mode-menu))
@@ -496,8 +636,7 @@ Enabled automatically for Scribble langs; see
 
 
 ;;;###autoload
-(unless (assoc "\\.scrbl\\'" auto-mode-alist)
-  (push '("\\.scrbl\\'" . racket-hash-lang-mode) auto-mode-alist))
+(add-to-list 'auto-mode-alist '("\\.scrbl\\'" . racket-hash-lang-mode))
 
 (provide 'scribble)
 
