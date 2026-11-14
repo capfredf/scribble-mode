@@ -527,7 +527,7 @@ The file is opened with `scribble-view-program'."
            (w32-shell-execute "open" out))
           (t (find-file out)))))
 
-;;;###autoload (autoload 'scribble-compile "scribble" nil t)
+;;;###autoload (autoload 'scribble-compile "scribble-minor" nil t)
 (transient-define-prefix scribble-compile ()
   "Compile the current Scribble file with raco scribble."
   :incompatible '(("--html" "--htmls" "--markdown" "--text"
@@ -638,6 +638,6 @@ Enabled automatically for Scribble langs; see
 ;;;###autoload
 (add-to-list 'auto-mode-alist '("\\.scrbl\\'" . racket-hash-lang-mode))
 
-(provide 'scribble)
+(provide 'scribble-minor)
 
-;;; scribble.el ends here
+;;; scribble-minor.el ends here
