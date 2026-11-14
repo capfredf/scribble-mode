@@ -1,4 +1,6 @@
+;; -*- lexical-binding: t; -*-
 ;; $Id: scribble.el,v 1.49 2015/11/03 17:54:56 user Exp $
+;; Package-Requires: ((emacs "29.1") (racket-mode "20250528"))
 
 (defconst scribble-mode-title   "Racket Scribble Emacs Mode")
 (defconst scribble-mode-version "0.6")
@@ -22,7 +24,8 @@ details.  For other licenses and consulting, please contact the author.")
 
 ;;-------------------------------------------------------------------- Requires
 
-(require 'eldoc)
+(require 'imenu)
+(require 'outline)
 
 ;;---------------------------------------------------------------------- Custom
 
@@ -35,21 +38,6 @@ details.  For other licenses and consulting, please contact the author.")
 (defface scribble-comment-face
   '((t :foreground "cyan"))
   "Face for Comments in Scribble mode."
-  :group 'scribble)
-
-(defface scribble-at-keyword-face
-  '((t :weight bold :foreground "gray50"))
-  "Face for `@'-and-name in Scribble mode."
-  :group 'scribble)
-
-(defface scribble-square-bracket-face
-  '((t :weight bold :foreground "#c48080"))
-  "Face for square brackets in Scribble mode."
-  :group 'scribble)
-
-(defface scribble-curly-brace-face
-  '((t :weight bold :foreground "#c48080"))
-  "Face for curly braces in Scribble mode."
   :group 'scribble)
 
 (defface scribble-title-face
@@ -87,6 +75,11 @@ details.  For other licenses and consulting, please contact the author.")
   "Face for @emph in Scribble mode."
   :group 'scribble)
 
+(defface scribble-italic-face
+  '((t  :slant italic))
+  "Face for @italic in Scribble mode."
+  :group 'scribble)
+
 (defface scribble-tt-face
   '((t  :family "DejaVu Sans Mono"))
   "Face for @tt in Scribble mode."
@@ -95,11 +88,6 @@ details.  For other licenses and consulting, please contact the author.")
 (defface scribble-link-text-face
   '((t :underline t :foreground "blue"))
   "Face for link text in Scribble mode."
-  :group 'scribble)
-
-(defface scribble-planet-face
-  '((t))
-  "Face for @PLaneT in Scribble mode."
   :group 'scribble)
 
 (defface scribble-racket-result-face
@@ -123,97 +111,6 @@ details.  For other licenses and consulting, please contact the author.")
        :slant      normal
        :weight     normal))
   "Face for @litchar in Scribble mode."
-  :group 'scribble)
-
-;; Quickref Faces:
-
-;; (defface scribble-quickref-default-face
-;;   '((t :family     "DejaVu Sans"
-;;        :foreground "#000000"
-;;        :background "#e8e8ff"
-;;        :weight     normal
-;;        :slant      normal))
-;;   "Face for Quickref in Scribble mode."
-;;   :group 'scribble)
-
-;; (defface scribble-quickref-meta-face
-;;   '((t :inherit    scribble-quickref-default-face
-;;        :foreground "#000000"))
-;;   "Face for Quickref !!! in Scribble mode."
-;;   :group 'scribble)
-
-;; (defface scribble-quickref-literal-face
-;;   '((t :family     "DejaVu Sans Mono"
-;;        :inherit    scribble-quickref-default-face
-;;        :foreground "red4"
-;;        :weight     bold))
-;;   "Face for Quickref !!! in Scribble mode."
-;;   :group 'scribble)
-
-;; (defface scribble-quickref-value-face
-;;   '((t :family     "DejaVu Sans Mono"
-;;        :inherit    scribble-quickref-default-face
-;;        :foreground "green4"))
-;;   "Face for Quickref !!! in Scribble mode."
-;;   :group 'scribble)
-
-;; (defface scribble-quickref-at-face
-;;   '((t :inherit    scribble-quickref-literal-face))
-;;   "Face for Quickref !!! in Scribble mode."
-;;   :group 'scribble)
-
-;; (defface scribble-quickref-keyword-face
-;;   '((t :family     "DejaVu Sans"
-;;        :inherit    scribble-quickref-literal-face))
-;;   "Face for Quickref !!! in Scribble mode."
-;;   :group 'scribble)
-
-;; (defface scribble-quickref-form-name-face
-;;   '((t :inherit scribble-quickref-default-face
-;;        :foreground "blue4"
-;;        :weight  bold))
-;;   "Face for Quickref !!! in Scribble mode."
-;;   :group 'scribble)
-
-;; (defface scribble-quickref-type-face
-;;   '((t :inherit    scribble-quickref-default-face
-;;        :foreground "blue")) ;!!!
-;;   "Face for Quickref !!! in Scribble mode."
-;;   :group 'scribble)
-
-;; (defface scribble-quickref-arg-face
-;;   '((t :inherit    scribble-quickref-default-face
-;;        :slant      italic
-;;        :foreground "blue2"))
-;;   "Face for Quickref !!! in Scribble mode."
-;;   :group 'scribble)
-
-;; ElDoc Faces:
-
-(defface scribble-eldoc-default-face
-  '((t :family     "DejaVu Sans"
-       :foreground "#000000"
-       :background "#fffff0"
-       :weight     normal
-       :slant      normal))
-  "Face for ElDoc in Scribble mode."
-  :group 'scribble)
-
-(defface scribble-eldoc-literal-face
-  '((t :inherit    scribble-eldoc-default-face))
-  "Face for ElDoc literals in Scribble mode."
-  :group 'scribble)
-
-(defface scribble-eldoc-meta-face
-  '((t :inherit    scribble-eldoc-default-face
-       :foreground "#4040ff"))
-  "Face for ElDoc metasyntactic symbols in Scribble mode."
-  :group 'scribble)
-
-(defface scribble-eldoc-nonterminal-face
-  '((t :inherit scribble-eldoc-default-face
-       :slant   italic))
-  "Face for ElDoc nonterminals in Scribble mode."
   :group 'scribble)
 
 ;;---------------------------------------------------- Customization Procedures
@@ -346,7 +243,7 @@ details.  For other licenses and consulting, please contact the author.")
     [italic ([p - pre-content? -]
              ...)
             element?
-            nil]
+            scribble-italic-face]
     [bold ([p - pre-content? -]
            ...)
           element?
@@ -563,197 +460,6 @@ details.  For other licenses and consulting, please contact the author.")
     ,@scribble-manual-forms
     ,@scribble-bnf-forms))
 
-(defconst scribble-name-string-to-form-hash
-  (let ((ht (make-hash-table :test 'equal)))
-    (mapc (lambda (form)
-            (puthash (symbol-name (scribble-get-form-name form)) form ht))
-          scribble-forms)
-    ht))
-
-(defun scribble-minus-to-nil (x)
-  (if (eq x '-) nil x))
-
-(defun scribble-form-type-to-racket (type)
-  ;; TODO: translate true, false, rx, quote.  Or convert types to strings.
-  (format "%s" type))
-
-;;---------------------------------------------------------------- Syntax Table
-
-(defvar scribble-mode-syntax-table
-  (let ((st (make-syntax-table)))
-    
-    (modify-syntax-entry ?   " " st)
-    (modify-syntax-entry ?\t " " st)
-    (modify-syntax-entry ?\f " " st)
-    (modify-syntax-entry ?\n ">" st)
-    
-    (modify-syntax-entry ?\" "." st)
-    
-    (modify-syntax-entry ?\@ "_ 1" st)
-    (modify-syntax-entry ?\# "_ 1" st)
-    (modify-syntax-entry ?\: "_ 1" st)
-    (modify-syntax-entry ?\; ". 2" st)
-    
-    (modify-syntax-entry ?\( "()" st)
-    (modify-syntax-entry ?\) ")(" st)
-    (modify-syntax-entry ?\[ "(]" st)
-    (modify-syntax-entry ?\] ")[" st)
-    (modify-syntax-entry ?\{ "(}" st)
-    (modify-syntax-entry ?\} "){" st)
-    
-    st))
-
-;;------------------------------------------------------------- Forms Reference
-
-;; (defun scribble-forms-reference ()
-;;   (interactive)
-;;   (scribble-buffer-display
-;;    "*Scribble Forms Reference*"
-;;    (function
-;;     (lambda ()
-;;       (mapc (lambda (form)
-;;               (insert (scribble-form-quickref-text form) "\n\n"))
-;;             scribble-forms)))))
-
-;;------------------------------------------------------------------- Mode Menu
-
-(defvar scribble-mode-menu
-  (let ((km (make-sparse-keymap "Scribble")))
-
-    (define-key km [scribble-about]
-      '(menu-item "About Scribble Emacs Mode..." scribble-about
-                  :help "See information about Scribble Emacs mode"))
-
-    (define-key km [scribble-browse-mode-web]
-      '(menu-item "Browse Scribble Emacs Mode Web..." scribble-browse-mode-web
-                  :help "Browse Web pages for Scribble Emacs mode"))
-
-    ;; TODO: Browse/search scribble docs.
-
-    (define-key km [scribble-separator-2]
-      `(menu-item "--"))
-
-    ;; TODO: Experiment with this.  Use local variable "scribble-modules" to
-    ;; specify in files, and update it programmatically from this interface.
-    ;; Can also have operation that scans "#lang" and "@(require" to determine
-    ;; or update this variable.  Unfortunately can't use "-*-" line because
-    ;; Emacs currently (GNU 23.2) doesn't support it occuring after the "#lang"
-    ;; line.
-    (define-key km [scribble-forms-bnf]
-      '(menu-item "scribble/bnf" nil
-                  :enable nil
-                  :button (:toggle . t)
-                  :help "!!!"))
-    (define-key km [scribble-forms-manual]
-      '(menu-item "scribble/manual" nil
-                  :enable nil
-                  :button (:toggle . nil)
-                  :help "!!!"))
-    (define-key km [scribble-forms-base]
-      '(menu-item "scribble/base" nil
-                  :enable nil
-                  :button (:toggle . t)
-                  :help "!!!"))
-
-    ;; (define-key km [scribble-forms-reference]
-    ;;   '(menu-item "Forms Reference..." scribble-forms-reference
-    ;;               :help "Show a reference of Scribble forms"))
-
-    (define-key km [scribble-separator-1]
-      `(menu-item "--"))
-
-    (define-key km [scribble-customize]
-      '(menu-item "Customize..." scribble-customize
-                  :help "Set Emacs customization options for Scribble"))
-    ;; TODO: Perhaps wrapping "completion-at-point" with another procedure
-    ;; that does "call-interactively" will work.
-    ;;
-    ;; (define-key km [scribble-completion-at-point]
-    ;;   `(menu-item "Completion at Point" 'completion-at-point))
-
-    km))
-
-;;---------------------------------------------------------------------- Keymap
-
-(defvar scribble-mode-map 
-  (let ((km (make-sparse-keymap)))
-    (define-key km (kbd "M-TAB") 'completion-at-point)
-    (define-key km [menu-bar Scribble] (cons "Scribble" scribble-mode-menu))
-    km))
-
-;;------------------------------------------------------------------- Font-Lock
-
-;; TODO: Should probably switch to using something other than font-lock, like
-;; handwritten fuzzy parser.
-
-(defvar scribble-font-lock-keywords
-  `(
-     ,@(mapcar (lambda (face-to-namerxs-pair)
-                 (let ((face (car face-to-namerxs-pair)))
-                   `(,(concat "\\("     ; < 1 at-name
-                              "@"
-                              (let ((names (cdr face-to-namerxs-pair)))
-                                (if (cdr names)
-                                    (regexp-opt names)
-                                  (car names)))
-                              "\\)"       ; > 1 at-name
-                              "\\b"
-                              "\\(?:"     ; < opt-squares
-                              "\\(\\[\\)" ; = 2 open-square
-                              "[^]]*"     ;
-                              "\\(\\]\\)" ; = 3 close-square
-                              "\\)?"      ; > opt-squares
-                              "\\(?:"     ; < opt-curlies
-                              "\\({\\)"   ; ; = 4 open-curly
-                              (if face "\\(" "")
-                              "[^}]*"   ;
-                              (if face "\\)" "")
-                              "\\(}\\)" ; = 5,6 close-curly
-                              "\\)?"    ; > opt-curlies
-                              )
-                     (1 'scribble-at-keyword-face)
-                     (2 'scribble-square-bracket-face nil t)
-                     (3 'scribble-square-bracket-face nil t)
-                     (4 'scribble-curly-brace-face    nil t)
-                     ,@(if face
-                           `((5 (quote ,face) nil t))
-                         '())
-                     (,(if face 6 5) 'scribble-curly-brace-face nil t))))
-               (let ((face-to-namerxs-alist '()))
-                 (mapc (lambda (form)
-                         (let* ((namerx (regexp-quote
-                                         (symbol-name (scribble-get-form-name
-                                                       form))))
-                                (face (scribble-get-form-face form))
-                                (pair (assq face face-to-namerxs-alist)))
-                           (if pair
-                               (setcdr pair (cons namerx (cdr pair)))
-                             (setq face-to-namerxs-alist
-                                   `((,face . (,namerx))
-                                     ,@face-to-namerxs-alist)))))
-                       scribble-forms)
-                 face-to-namerxs-alist))
-    
-    ("\\(@\\)\\(PLaneT\\)"
-     (1 'scribble-at-keyword-face)
-     (2 'scribble-planet-face))
-    
-    ;; TODO: Is this right?
-    ;;
-    ;; ("\\(@\\)@"
-    ;;  (1 'scribble-at-keyword-face))
-    
-    ("\\(@#reader\\)[ ]+\\([^\r\n]+\\)"
-     (1 'scribble-at-keyword-face)
-     (2 'scribble-at-keyword-face))
-    
-    ("\\`\\(#lang\\)[ ]+\\([^\r\n]+\\)"
-     (1 'scribble-at-keyword-face)
-     (2 'scribble-at-keyword-face))))
-
-(defvar scribble-font-lock-defaults
-  `(scribble-font-lock-keywords nil))
-
 ;;----------------------------------------------------------------------- Imenu
 
 (defvar scribble-imenu-generic-expression
@@ -763,275 +469,17 @@ details.  For other licenses and consulting, please contact the author.")
 
 ;; TODO: Use one of the lower-level ways of doing this.
 
-;;------------------------------------------------------------------ Characters
-
-(defconst scribble-right-arrow-char 8594)
-
-;;-------------------------------------------------------------------- Quickref
-
-;; TODO: !!! this needs work since eldoc was forked out of this.
-;; 
-;; (defun scribble-form-type-to-quickref (type)
-;;   (propertize (scribble-form-type-to-racket type)
-;;               'face 'scribble-quickref-type-face))
-;; 
-;; (defconst scribble-quickref-dotdotdot 
-;;   (propertize "..." 'face 'scribble-quickref-meta-face))
-;; 
-;; (defconst scribble-quickref-space
-;;   (propertize " " 'face 'scribble-quickref-default-face))
-;; 
-;; (defconst scribble-quickref-open-paren
-;;   (propertize "(" 'face 'scribble-quickref-literal-face))
-;; 
-;; (defconst scribble-quickref-close-paren
-;;   (propertize ")" 'face 'scribble-quickref-literal-face))
-;; 
-;; (defconst scribble-quickref-open-optional
-;;   (propertize "[" 'face 'scribble-quickref-meta-face))
-;; 
-;; (defconst scribble-quickref-close-optional
-;;   (propertize "]" 'face 'scribble-quickref-meta-face))
-;; 
-;; (defconst scribble-quickref-space-colon-space
-;;   (concat scribble-quickref-space
-;;           (propertize ":" 'face 'scribble-quickref-meta-face)
-;;           scribble-quickref-space))
-;; 
-;; (defconst scribble-quickref-space-equal-space
-;;   (concat scribble-quickref-space
-;;           (propertize "=" 'face 'scribble-quickref-meta-face)
-;;           scribble-quickref-space))
-;; 
-;; (defun scribble-form-arg-to-quickref (arg)
-;;   (if (eq arg '...)
-;;       scribble-quickref-dotdotdot
-;;     (let* ((fmt      '())
-;;            (kind     (scribble-get-formarg-kind arg))
-;;            (name     (scribble-minus-to-nil
-;;                       (scribble-get-formarg-name arg)))
-;;            (type     (scribble-get-formarg-type arg))
-;;            (default  (scribble-minus-to-nil
-;;                       (scribble-get-formarg-default arg)))
-;;            (name-str (if name (symbol-name name) nil))
-;;            (type-str (scribble-form-type-to-racket type))
-;;            (type-ps  (propertize type-str
-;;                                  'face 'scribble-quickref-type-face)))
-;;       (cond ((eq kind 'p)
-;;              (setq fmt
-;;                    (if name-str
-;;                        `(,type-ps
-;;                          ,scribble-quickref-space-colon-space
-;;                          ,(propertize name-str 
-;;                                       'face
-;;                                       'scribble-quickref-arg-face))
-;;                      `(,type-ps))))
-;;             ((eq kind 'k)
-;;              (or name-str
-;;                  (error "formarg kind k must have name in %s" arg))
-;;              (setq fmt
-;;                    `(,type-ps
-;;                      ,scribble-quickref-space-colon-space
-;;                      ,(propertize (concat "#:" name-str)
-;;                                   'face 'scribble-quickref-keyword-face))))
-;;             (t (error "invalid formarg kind in %s" arg)))
-;;       (apply 'concat
-;;              (if default
-;;                  (reverse
-;;                   `(,(propertize default 'face 'scribble-quickref-value-face)
-;;                     ,scribble-quickref-space-equal-space
-;;                     ,@fmt))
-;;                (reverse fmt))))))
-;; 
-;; (defun scribble-form-quickref-text (form)
-;;   ;; TODO: !!! working on this
-;;   (let* ((at (propertize "@" 'face 'scribble-quickref-at-face))
-;;          (space-arrow-space
-;;           (concat scribble-quickref-space
-;;                   (propertize (string scribble-right-arrow-char)
-;;                               'face
-;;                               'scribble-quickref-meta-face)
-;;                   scribble-quickref-space)))
-;;   (apply
-;;    'concat
-;;    `(,at
-;;      ,(propertize (symbol-name (scribble-get-form-name form))
-;;                   'face 'scribble-quickref-form-name-face)
-;;      ,@(let ((args (scribble-get-form-args form)))
-;;          (if args
-;;              (let ((fmt '()))
-;;                (mapc (lambda (arg)
-;;                        (setq fmt `(,(scribble-form-arg-to-quickref arg)
-;;                                    ,scribble-quickref-space
-;;                                    ,@fmt)))
-;;                      args)
-;;                (reverse fmt))
-;;            '()))
-;;      ,closeparen-space-arrow-space
-;;      ,(scribble-form-type-to-quickref (scribble-get-form-type form))))))
-
-;;------------------------------------------------------------------------ ElDoc
-
-(defconst scribble-eldoc-dotdotdot 
-  (propertize "..." 'face 'scribble-eldoc-meta-face))
-
-(defconst scribble-eldoc-space
-  (propertize " " 'face 'scribble-eldoc-default-face))
-
-(defconst scribble-eldoc-open-paren
-  (propertize "(" 'face 'scribble-eldoc-literal-face))
-
-(defconst scribble-eldoc-close-paren
-  (propertize ")" 'face 'scribble-eldoc-literal-face))
-
-(defconst scribble-eldoc-open-optional
-  (propertize "[" 'face 'scribble-eldoc-meta-face))
-
-(defconst scribble-eldoc-close-optional
-  (propertize "]" 'face 'scribble-eldoc-meta-face))
-
-(defconst scribble-eldoc-closeparen-space-arrow-space
-  (concat scribble-eldoc-close-paren
-          scribble-eldoc-space
-          (propertize (string scribble-right-arrow-char)
-                      'face
-                      'scribble-eldoc-meta-face)
-          scribble-eldoc-space))
-
-(defun scribble-form-arg-to-eldoc (arg)
-  (if (eq arg '...)
-      scribble-eldoc-dotdotdot
-    (let* ((kind     (scribble-get-formarg-kind arg))
-           (name     (scribble-minus-to-nil (scribble-get-formarg-name arg)))
-           (name-str (if name (symbol-name name) nil))
-           (id-ps
-            (cond ((eq kind 'p)
-                   (propertize (or name-str
-                                   (scribble-form-type-to-racket
-                                    (scribble-get-formarg-type arg)))
-                               'face
-                               'scribble-eldoc-nonterminal-face))
-                  ((eq kind 'k)
-                   (propertize
-                    (concat "#:"
-                            (or name-str
-                                (error "formarg kind k must have name in %s"
-                                       arg)))
-                    'face 'scribble-eldoc-literal-face))
-                  (t (error "invalid formarg kind in %s" arg)))))
-      (if (eq '- (scribble-get-formarg-default arg))
-          id-ps
-        (concat scribble-eldoc-open-optional
-                id-ps
-                scribble-eldoc-close-optional)))))
-
-(defun scribble-make-form-eldoc-message (form)
-  (apply
-   'concat
-   `(,scribble-eldoc-open-paren
-     ,(propertize (symbol-name (scribble-get-form-name form))
-                  'face 'scribble-eldoc-literal-face)
-     ,@(let ((args (scribble-get-form-args form)))
-         (if args
-             (let ((fmt '()))
-               (mapc (lambda (arg)
-                       (setq fmt `(,(scribble-form-arg-to-eldoc arg)
-                                   ,scribble-eldoc-space
-                                   ,@fmt)))
-                     args)
-               (reverse fmt))
-           '()))
-     ,scribble-eldoc-closeparen-space-arrow-space
-     ,(propertize (scribble-form-type-to-racket (scribble-get-form-type form))
-                  'face
-                  'scribble-eldoc-nonterminal-face))))
-
-(defconst scribble-name-to-eldoc-message-hash
-  (let ((ht (make-hash-table :test 'equal)))
-    (mapc (lambda (form)
-            (puthash (symbol-name (scribble-get-form-name form))
-                     (scribble-make-form-eldoc-message form)
-                     ht))
-          scribble-forms)
-    ht))
-
-(defun scribble-get-form-eldoc-message (form)
-  (scribble-make-form-eldoc-message form))
-
-(defun scribble-eldoc-documentation-function ()
-  ;; TODO: Implement this properly, figuring out which form we're in.  Might
-  ;; wait until we implement better fontification, using the same parsing
-  ;; mechanism.
-  ;;
-  ;; TODO: !!! Maybe look for "@"-name under point, and if that fails, then
-  ;; up-sexp, and then look for an @-name to left of point (or left-sexp if
-  ;; there is a square-bracket to left of point.
-  (let ((word (let ((c (char-after (point))))
-                (and c
-                     (memq (char-syntax c) '(?w ?_))
-                     (current-word)))))
-    (and (> (length word) 0)
-         (equal ?@ (aref word 0))
-         (gethash (substring word 1)
-                  scribble-name-to-eldoc-message-hash
-                  nil))))
-
-;;------------------------------------------------------------------ Completion
-
-(defun scribble-build-completion-table ()
-  (sort (let ((kw-seen-hash (make-hash-table :test 'eq))
-              (result       '("Felleisen")))
-          (mapc (lambda (form)
-                  (setq result (cons (symbol-name (scribble-get-form-name form))
-                                     result))
-                  (mapc (lambda (arg)
-                          (and (vectorp arg)
-                               (eq 'k (scribble-get-formarg-kind arg))
-                               (let ((sym (scribble-get-formarg-name arg)))
-                                 (or (gethash sym kw-seen-hash)
-                                     (progn (puthash sym t kw-seen-hash)
-                                            (setq result
-                                                  (cons (concat
-                                                         "#:"
-                                                         (symbol-name sym))
-                                                        result)))))))
-                        (scribble-get-form-args form)))
-                scribble-forms)
-          result)
-        'string<))
-
-(defconst scribble-completion-table (scribble-build-completion-table))
-
-(defconst scribble-completion-at-point-tail 
-  (list scribble-completion-table
-        ;; :annotation-function 'scribble-completion-annotate-function
-        ))
-
-(defun scribble-completion-at-point-function ()
-  (let* ((end (point))
-         (start (let ((c (char-before end)))
-                  (if (and c (memq (char-syntax c) '(?w ?_)))
-                      (save-excursion
-                        (backward-sexp 1)
-                        (and (eq ?\@ (char-after (point)))
-                             (forward-char 1))
-                        (point))
-                    end))))
-    `(,start ,end ,@scribble-completion-at-point-tail)))
-
 ;;-------------------------------------------------------------- Buffer Display
 
 (defun scribble-buffer-display (name proc)
-  (save-excursion
-    (set-buffer (get-buffer-create name))
-    (toggle-read-only 0)
-    (buffer-disable-undo)
-    (goto-char (point-min))
-    (delete-region (point-min) (point-max))
-    (funcall proc)
-    (buffer-enable-undo)
+  (with-current-buffer (get-buffer-create name)
+    (let ((inhibit-read-only t))
+      (buffer-disable-undo)
+      (erase-buffer)
+      (funcall proc)
+      (buffer-enable-undo))
     (set-buffer-modified-p nil)
-    (toggle-read-only 1)
+    (setq buffer-read-only t)
     (goto-char (point-min))
     ;; TODO: Maybe make "q" restore window config.
     (local-set-key "q" 'scribble-quit-buffer-display)
@@ -1074,67 +522,309 @@ details.  For other licenses and consulting, please contact the author.")
               scribble-mode-legal-notices
               "\n")))))
 
-;;--------------------------------------------------------------- Mode Function
+;;------------------------------------------------------------------ Minor Mode
+
+;; `racket-hash-lang-mode' already gets lexing, indentation, comments, paren
+;; matching and text filling from the "#lang" itself, and `racket-xp-mode'
+;; covers documentation and completion.  This minor mode adds only what
+;; hash-lang does not: faces for prose forms, imenu, outline, and a few
+;; editing commands.
+
+(defcustom scribble-minor-mode-module-language-regexp
+  (rx bos (? "rhombus/") "scribble" (or eos "/"))
+  "Regexp matched against a lang's \"module-language\" string.
+When it matches, `scribble-minor-mode' is enabled in that
+`racket-hash-lang-mode' buffer."
+  :type 'regexp
+  :group 'scribble)
 
 ;;;###autoload
-(defun scribble-mode ()
-  "!!! `\[COMMAND]', `\{KEYMAP}', and `\<KEYMAP>'"
-  (interactive)
+(defun scribble-minor-mode-maybe-enable (module-language)
+  "Enable `scribble-minor-mode' when MODULE-LANGUAGE is a Scribble lang.
+Intended for `racket-hash-lang-module-language-hook'."
+  (when (and module-language
+             (string-match-p scribble-minor-mode-module-language-regexp
+                             module-language))
+    (scribble-minor-mode 1)))
 
-  (kill-all-local-variables)
+;;;###autoload
+(add-hook 'racket-hash-lang-module-language-hook
+          #'scribble-minor-mode-maybe-enable)
 
-  (use-local-map scribble-mode-map)
+;; Font-Lock:
 
-  (set-syntax-table scribble-mode-syntax-table)
-  
-  (setq fill-column 79)
+(defcustom scribble-hide-markup t
+  "When non-nil, hide the markup around forms in `scribble-hide-markup-forms'.
+For example, show \"@bold{word}\" as just \"word\" in bold.  Toggle in a
+buffer with `scribble-toggle-markup-hiding'."
+  :type 'boolean
+  :group 'scribble)
 
-  ;; Comments:
-  (set (make-local-variable 'comment-start)      "@;")
-  (set (make-local-variable 'comment-end)        "")
-  (set (make-local-variable 'comment-padding)    1)
-  (set (make-local-variable 'comment-multi-line) nil)
-  (set (make-local-variable 'comment-start-skip)
-       "\\(\\(^\\|[^\\\\\n]\\)\\(\\\\\\\\\\)*\\);+ *")
+(defcustom scribble-hide-markup-forms '(bold italic emph section)
+  "Forms whose \"@name{\" and \"}\" are hidden when `scribble-hide-markup'.
+Changes take effect after reloading scribble.el."
+  :type '(repeat symbol)
+  :group 'scribble)
 
-  ;; TODO: comment-indent-function
+(defcustom scribble-reveal-markup-at-point t
+  "When non-nil, show hidden markup of the form containing point.
+Only matters when `scribble-hide-markup' is non-nil."
+  :type 'boolean
+  :group 'scribble)
 
-  ;; TODO: indent-line-function 
+(defconst scribble--hide-markup-open-rx
+  (concat "@" (regexp-opt (mapcar #'symbol-name scribble-hide-markup-forms))
+          "\\_>\\(?:\\[[^]]*\\]\\)?{")
+  "Regexp matching the opening \"@name[...]{\" of a form with hidden markup.")
 
-  ;; TODO: abbrev
+(defvar-local scribble--revealed nil
+  "Markers (BEG . END) of the form whose markup is revealed, or nil.")
 
-  ;; Font-Lock:
-  (set (make-local-variable 'font-lock-defaults) scribble-font-lock-defaults)
+(defun scribble--markup-facespec ()
+  "Font-lock facespec for hidden markup of the form just matched.
+Leaves the markup visible when the form is the revealed one."
+  (unless (and scribble--revealed
+               (= (match-beginning 0) (car scribble--revealed)))
+    '(face nil invisible scribble-markup)))
 
-  ;; Imenu:
-  (set (make-local-variable 'imenu-generic-expression)
-       scribble-imenu-generic-expression)
-  (set (make-local-variable 'imenu-case-fold-search) nil)
-  (imenu-add-to-menubar "Imenu")
-  
-  ;; ElDoc:
-  (set (make-local-variable 'eldoc-documentation-function)
-       'scribble-eldoc-documentation-function)
-  (turn-on-eldoc-mode)
+(defun scribble--make-body-matcher (name-rx)
+  "Return a font-lock matcher for @NAME-RX[...]{BODY}.
+On success, match group 1 spans BODY, up to the balancing `}';
+group 2 spans the opening \"@NAME[...]{\" and group 3 the closing `}'."
+  (let ((rx (concat "@" name-rx "\\_>\\(?:\\[[^]]*\\]\\)?{")))
+    (lambda (limit)
+      (let (found)
+        (while (and (not found) (re-search-forward rx limit t))
+          (let* ((open (1- (point)))
+                 (close (condition-case nil
+                            (1- (scan-lists open 1 0))
+                          (scan-error nil))))
+            (when close
+              (set-match-data (list (match-beginning 0) (1+ close)
+                                    (1+ open) close
+                                    (match-beginning 0) (1+ open)
+                                    close (1+ close)))
+              (setq found t))))
+        found))))
 
-  ;; Completion:
-  (set (make-local-variable 'completion-at-point-functions)
-       (list 'scribble-completion-at-point-function))
+(defconst scribble--semantic-font-lock-keywords
+  ;; Group forms by (FACE . HIDE-MARKUP?) so each group is one regexp.
+  (let ((groups '()))
+    (dolist (form scribble-forms)
+      (let ((face (scribble-get-form-face form)))
+        (when face
+          (let* ((sym  (scribble-get-form-name form))
+                 (key  (cons face (and (memq sym scribble-hide-markup-forms) t)))
+                 (pair (assoc key groups)))
+            (if pair
+                (push (symbol-name sym) (cdr pair))
+              (push (list key (symbol-name sym)) groups))))))
+    (mapcar (lambda (group)
+              (let ((face (car (car group)))
+                    (hide (cdr (car group))))
+                `(,(scribble--make-body-matcher (regexp-opt (cdr group)))
+                  (1 ',face prepend)
+                  ,@(and hide
+                         '((2 (scribble--markup-facespec) prepend)
+                           (3 (scribble--markup-facespec) prepend))))))
+            groups))
+  "Font-lock keywords giving prose forms (headings, bold, ...) their faces.
+These are layered over the lexer token faces from `racket-hash-lang-mode'.")
 
-  ;; Mode Identification:
-  (setq mode-name "Scribble")
-  (setq major-mode 'scribble-mode)
+;; Outline:
 
-  ;; Hooks:
-  (run-mode-hooks 'scribble-mode-hook))
+(defconst scribble-outline-regexp
+  "@\\(?:title\\|\\(?:sub\\)\\{0,2\\}section\\|sub\\*section\\)\\_>"
+  "Value for `outline-regexp' in `scribble-minor-mode'.")
+
+(defun scribble-outline-level ()
+  "Value for `outline-level' in `scribble-minor-mode'."
+  (save-excursion
+    (save-match-data
+      (looking-at scribble-outline-regexp)
+      (let ((s (match-string 0)))
+        (cond ((equal s "@title")         1)
+              ((equal s "@section")       2)
+              ((equal s "@subsection")    3)
+              ((equal s "@subsubsection") 4)
+              (t                          5))))))
+
+;; Commands:
+
+(defun scribble-wrap-region (name)
+  "Wrap the active region in @NAME{...}, or insert @NAME{} at point."
+  (interactive
+   (list (completing-read "Form: "
+                          (mapcar (lambda (form)
+                                    (symbol-name (scribble-get-form-name form)))
+                                  scribble-forms))))
+  (if (use-region-p)
+      (let ((beg (region-beginning))
+            (end (copy-marker (region-end))))
+        (goto-char beg)
+        (insert "@" name "{")
+        (goto-char end)
+        (insert "}")
+        (set-marker end nil))
+    (insert "@" name "{}")
+    (backward-char 1)))
+
+(defun scribble--hidden-form-at-point ()
+  "Return (BEG . END) of the innermost hidden-markup form around point.
+Point counts as inside from just before \"@\" to just after the closing `}'."
+  (save-excursion
+    (save-match-data
+      (let ((pt (point)))
+        (or
+         ;; Point in or right before the opening "@name[...]{".
+         (let ((at (if (eq (char-after) ?@)
+                       (point)
+                     (save-excursion
+                       (and (search-backward "@" (line-beginning-position) t)
+                            (point))))))
+           (when (and at (progn (goto-char at)
+                                (looking-at scribble--hide-markup-open-rx))
+                      (<= pt (match-end 0)))
+             (let ((close (ignore-errors (scan-lists (1- (match-end 0)) 1 0))))
+               (and close (cons at close)))))
+         ;; Point in the body, or right after the closing `}'.
+         (let ((pos (if (eq (char-before pt) ?}) (1- pt) pt))
+               (result nil)
+               (depth 0))
+           (while (and (not result) pos (< depth 20))
+             (setq pos (ignore-errors (scan-lists pos -1 1)))
+             (setq depth (1+ depth))
+             (when (and pos (eq (char-after pos) ?{))
+               (goto-char (1+ pos))
+               (when (looking-back scribble--hide-markup-open-rx
+                                   (line-beginning-position))
+                 (let ((close (ignore-errors (scan-lists pos 1 0))))
+                   (when close
+                     (setq result (cons (match-beginning 0) close)))))))
+           result))))))
+
+(defun scribble--update-reveal (&optional force-none)
+  "Reveal the markup of the hidden-markup form at point, re-hiding the old one.
+With FORCE-NONE, just re-hide."
+  (let* ((new (and (not force-none)
+                   scribble-hide-markup
+                   scribble-reveal-markup-at-point
+                   (scribble--hidden-form-at-point)))
+         (old scribble--revealed))
+    (unless (and old new
+                 (= (car new) (car old))
+                 (= (cdr new) (cdr old)))
+      (when (or old new)
+        (setq scribble--revealed
+              (and new (cons (copy-marker (car new)) (copy-marker (cdr new)))))
+        (when old
+          (let ((beg (marker-position (car old)))
+                (end (marker-position (cdr old))))
+            (set-marker (car old) nil)
+            (set-marker (cdr old) nil)
+            (when (and beg end (< beg end))
+              (font-lock-flush beg (min end (point-max))))))
+        (when new
+          (font-lock-flush (car new) (cdr new)))))))
+
+(defun scribble--reveal-post-command ()
+  (scribble--update-reveal))
+
+(defun scribble--apply-markup-hiding ()
+  (if scribble-hide-markup
+      (add-to-invisibility-spec 'scribble-markup)
+    (remove-from-invisibility-spec 'scribble-markup)))
+
+(defun scribble-toggle-markup-hiding (&optional arg)
+  "Toggle hiding of markup around bold/italic forms in this buffer.
+With a prefix ARG, hide markup when ARG is positive, show it otherwise.
+See `scribble-hide-markup-forms'."
+  (interactive "P")
+  (setq-local scribble-hide-markup
+              (if (null arg)
+                  (not scribble-hide-markup)
+                (> (prefix-numeric-value arg) 0)))
+  (scribble--apply-markup-hiding)
+  (message "Scribble markup %s" (if scribble-hide-markup "hidden" "shown")))
+
+;; Menu and Keymap:
+
+(defvar scribble-minor-mode-menu
+  (let ((km (make-sparse-keymap "Scribble")))
+    (define-key km [scribble-about]
+      '(menu-item "About Scribble Emacs Mode..." scribble-about
+                  :help "See information about Scribble Emacs mode"))
+    (define-key km [scribble-browse-mode-web]
+      '(menu-item "Browse Scribble Emacs Mode Web..." scribble-browse-mode-web
+                  :help "Browse Web pages for Scribble Emacs mode"))
+    (define-key km [scribble-separator-1]
+      '(menu-item "--"))
+    (define-key km [scribble-customize]
+      '(menu-item "Customize..." scribble-customize
+                  :help "Set Emacs customization options for Scribble"))
+    (define-key km [scribble-toggle-markup-hiding]
+      '(menu-item "Hide Markup" scribble-toggle-markup-hiding
+                  :button (:toggle . scribble-hide-markup)
+                  :help "Hide @bold{...}-style markup, showing only styled text"))
+    (define-key km [scribble-wrap-region]
+      '(menu-item "Wrap Region in Form..." scribble-wrap-region
+                  :help "Wrap the region in @form{...}"))
+    km))
+
+(defvar scribble-minor-mode-map
+  (let ((km (make-sparse-keymap)))
+    (define-key km (kbd "C-c C-w") #'scribble-wrap-region)
+    (define-key km (kbd "C-c C-x C-m") #'scribble-toggle-markup-hiding)
+    (define-key km [menu-bar Scribble] (cons "Scribble" scribble-minor-mode-menu))
+    km))
+
+;; Mode:
+
+;;;###autoload
+(define-minor-mode scribble-minor-mode
+  "Scribble prose conveniences on top of `racket-hash-lang-mode'.
+
+Enabled automatically for Scribble langs; see
+`scribble-minor-mode-module-language-regexp'.
+
+\\{scribble-minor-mode-map}"
+  :lighter " Scrbl"
+  :keymap scribble-minor-mode-map
+  :group 'scribble
+  (if scribble-minor-mode
+      (progn
+        (setq-local imenu-generic-expression scribble-imenu-generic-expression)
+        (setq-local imenu-create-index-function
+                    #'imenu-default-create-index-function)
+        (setq-local imenu-case-fold-search nil)
+        (setq-local outline-regexp scribble-outline-regexp)
+        (setq-local outline-level #'scribble-outline-level)
+        (unless (memq 'invisible font-lock-extra-managed-props)
+          (setq-local font-lock-extra-managed-props
+                      (cons 'invisible font-lock-extra-managed-props)))
+        (scribble--apply-markup-hiding)
+        (add-hook 'post-command-hook #'scribble--reveal-post-command nil t)
+        (font-lock-add-keywords nil scribble--semantic-font-lock-keywords
+                                'append))
+    (font-lock-remove-keywords nil scribble--semantic-font-lock-keywords)
+    (remove-hook 'post-command-hook #'scribble--reveal-post-command t)
+    (scribble--update-reveal t)
+    (remove-from-invisibility-spec 'scribble-markup)
+    ;; Clear our `invisible' props while font-lock still manages them.
+    (save-restriction
+      (widen)
+      (font-lock-unfontify-region (point-min) (point-max)))
+    (setq-local font-lock-extra-managed-props
+                (remq 'invisible font-lock-extra-managed-props))
+    (kill-local-variable 'outline-regexp)
+    (kill-local-variable 'outline-level))
+  (font-lock-flush))
 
 ;;------------------------------------------------------------------- Auto-Mode
 
 ;;;###autoload
-(mapc (lambda (pair)
-        (or (assoc (car pair) auto-mode-alist)
-            (push pair auto-mode-alist)))
-      '(("\\.scrbl\\'" . scribble-mode)))
+(unless (assoc "\\.scrbl\\'" auto-mode-alist)
+  (push '("\\.scrbl\\'" . racket-hash-lang-mode) auto-mode-alist))
 
 ;;--------------------------------------------------------------------- Provide
 
