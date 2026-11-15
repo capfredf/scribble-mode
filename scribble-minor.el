@@ -157,7 +157,7 @@ When FACE is non-nil, it is applied to the form's body.")
 
 (defvar scribble-imenu-generic-expression
   '((nil
-     "@\\(?:sub\\(?:sub\\)?\\)?section\\(?:\\[[^]]*\\]\\)?{\\([^}]*\\)"
+     "@\\(?:sub\\(?:sub\\)?\\)?section\\(?:\\[[^]]*\\]\\|([^)]*)\\)*{\\([^}]*\\)"
      1)))
 
 ;; TODO: Use one of the lower-level ways of doing this.
@@ -266,22 +266,40 @@ Intended for `racket-hash-lang-module-language-hook'."
 ;;                (= (match-beginning 0) (car scribble--revealed)))
 ;;     '(face nil invisible scribble-markup)))
 
+(defun scribble--skip-form-args (limit)
+  "Skip \"[...]\" and \"(...)\" argument groups at point, up to LIMIT.
+Return the position of the body's opening `{' if point then is at
+one, else nil.  Groups are skipped with `scan-lists', so they may nest
+and contain strings."
+  (let ((ok t))
+    (while (and ok (< (point) limit) (memq (char-after) '(?\[ ?\()))
+      (let ((end (ignore-errors (scan-lists (point) 1 0))))
+        (if end (goto-char end) (setq ok nil))))
+    (and ok (eq (char-after) ?{) (point))))
+
 (defun scribble--make-body-matcher (name-rx)
-  "Return a font-lock matcher for @NAME-RX[...]{BODY}.
+  "Return a font-lock matcher for @NAME-RX ARGS {BODY}.
+ARGS is any sequence of \"[...]\" (Racket) and \"(...)\" (Rhombus) groups.
 On success, match group 1 spans BODY, up to the balancing `}';
-group 2 spans the opening \"@NAME[...]{\" and group 3 the closing `}'."
-  (let ((rx (concat "@" name-rx "\\_>\\(?:\\[[^]]*\\]\\)?{")))
+group 2 spans the opening \"@NAME ARGS {\" and group 3 the closing `}'."
+  (let ((rx (concat "@" name-rx "\\_>")))
     (lambda (limit)
       (let (found)
         (while (and (not found) (re-search-forward rx limit t))
-          (let* ((open (1- (point)))
-                 (close (condition-case nil
-                            (1- (scan-lists open 1 0))
-                          (scan-error nil))))
-            (when close
-              (set-match-data (list (match-beginning 0) (1+ close)
+          (let* ((beg (match-beginning 0))
+                 (after-name (point))
+                 (open (scribble--skip-form-args limit))
+                 (close (and open
+                             (condition-case nil
+                                 (1- (scan-lists open 1 0))
+                               (scan-error nil)))))
+            (if (not close)
+                (goto-char after-name)
+              ;; Continue inside the body, so nested forms match too.
+              (goto-char (1+ open))
+              (set-match-data (list beg (1+ close)
                                     (1+ open) close
-                                    (match-beginning 0) (1+ open)
+                                    beg (1+ open)
                                     close (1+ close)))
               (setq found t))))
         found))))
