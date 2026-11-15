@@ -9,6 +9,7 @@
 
 ;;-------------------------------------------------------------------- Requires
 
+(require 'compile)
 (require 'imenu)
 (require 'outline)
 (require 'transient)
@@ -231,39 +232,39 @@ Intended for `racket-hash-lang-module-language-hook'."
 
 ;; Font-Lock:
 
-(defcustom scribble-hide-markup t
-  "When non-nil, hide the markup around forms in `scribble-hide-markup-forms'.
-For example, show \"@bold{word}\" as just \"word\" in bold.  Toggle in a
-buffer with `scribble-toggle-markup-hiding'."
-  :type 'boolean
-  :group 'scribble)
+;; (defcustom scribble-hide-markup t
+;;   "When non-nil, hide the markup around forms in `scribble-hide-markup-forms'.
+;; For example, show \"@bold{word}\" as just \"word\" in bold.  Toggle in a
+;; buffer with `scribble-toggle-markup-hiding'."
+;;   :type 'boolean
+;;   :group 'scribble)
 
-(defcustom scribble-hide-markup-forms '(bold italic emph section)
-  "Forms whose \"@name{\" and \"}\" are hidden when `scribble-hide-markup'.
-Changes take effect after reloading scribble.el."
-  :type '(repeat symbol)
-  :group 'scribble)
+;; (defcustom scribble-hide-markup-forms '(bold italic emph section)
+;;   "Forms whose \"@name{\" and \"}\" are hidden when `scribble-hide-markup'.
+;; Changes take effect after reloading scribble.el."
+;;   :type '(repeat symbol)
+;;   :group 'scribble)
 
-(defcustom scribble-reveal-markup-at-point t
-  "When non-nil, show hidden markup of the form containing point.
-Only matters when `scribble-hide-markup' is non-nil."
-  :type 'boolean
-  :group 'scribble)
+;; (defcustom scribble-reveal-markup-at-point t
+;;   "When non-nil, show hidden markup of the form containing point.
+;; Only matters when `scribble-hide-markup' is non-nil."
+;;   :type 'boolean
+;;   :group 'scribble)
 
-(defconst scribble--hide-markup-open-rx
-  (concat "@" (regexp-opt (mapcar #'symbol-name scribble-hide-markup-forms))
-          "\\_>\\(?:\\[[^]]*\\]\\)?{")
-  "Regexp matching the opening \"@name[...]{\" of a form with hidden markup.")
+;; (defconst scribble--hide-markup-open-rx
+;;   (concat "@" (regexp-opt (mapcar #'symbol-name scribble-hide-markup-forms))
+;;           "\\_>\\(?:\\[[^]]*\\]\\)?{")
+;;   "Regexp matching the opening \"@name[...]{\" of a form with hidden markup.")
 
-(defvar-local scribble--revealed nil
-  "Markers (BEG . END) of the form whose markup is revealed, or nil.")
+;; (defvar-local scribble--revealed nil
+;;   "Markers (BEG . END) of the form whose markup is revealed, or nil.")
 
-(defun scribble--markup-facespec ()
-  "Font-lock facespec for hidden markup of the form just matched.
-Leaves the markup visible when the form is the revealed one."
-  (unless (and scribble--revealed
-               (= (match-beginning 0) (car scribble--revealed)))
-    '(face nil invisible scribble-markup)))
+;; (defun scribble--markup-facespec ()
+;;   "Font-lock facespec for hidden markup of the form just matched.
+;; Leaves the markup visible when the form is the revealed one."
+;;   (unless (and scribble--revealed
+;;                (= (match-beginning 0) (car scribble--revealed)))
+;;     '(face nil invisible scribble-markup)))
 
 (defun scribble--make-body-matcher (name-rx)
   "Return a font-lock matcher for @NAME-RX[...]{BODY}.
@@ -292,19 +293,21 @@ group 2 spans the opening \"@NAME[...]{\" and group 3 the closing `}'."
       (let ((face (scribble-get-form-face form)))
         (when face
           (let* ((sym  (scribble-get-form-name form))
-                 (key  (cons face (and (memq sym scribble-hide-markup-forms) t)))
+                 (key  (cons face nil)) ; markup hiding disabled
+                 ;; (key  (cons face (and (memq sym scribble-hide-markup-forms) t)))
                  (pair (assoc key groups)))
             (if pair
                 (push (symbol-name sym) (cdr pair))
               (push (list key (symbol-name sym)) groups))))))
     (mapcar (lambda (group)
-              (let ((face (car (car group)))
-                    (hide (cdr (car group))))
+              (let ((face (car (car group))))
+                ;; (hide (cdr (car group)))
                 `(,(scribble--make-body-matcher (regexp-opt (cdr group)))
                   (1 ',face prepend)
-                  ,@(and hide
-                         '((2 (scribble--markup-facespec) prepend)
-                           (3 (scribble--markup-facespec) prepend))))))
+                  ;; ,@(and hide
+                  ;;        '((2 (scribble--markup-facespec) prepend)
+                  ;;          (3 (scribble--markup-facespec) prepend)))
+                  )))
             groups))
   "Font-lock keywords giving prose forms (headings, bold, ...) their faces.
 These are layered over the lexer token faces from `racket-hash-lang-mode'.")
@@ -347,83 +350,83 @@ These are layered over the lexer token faces from `racket-hash-lang-mode'.")
     (insert "@" name "{}")
     (backward-char 1)))
 
-(defun scribble--hidden-form-at-point ()
-  "Return (BEG . END) of the innermost hidden-markup form around point.
-Point counts as inside from just before \"@\" to just after the closing `}'."
-  (save-excursion
-    (save-match-data
-      (let ((pt (point)))
-        (or
-         ;; Point in or right before the opening "@name[...]{".
-         (let ((at (if (eq (char-after) ?@)
-                       (point)
-                     (save-excursion
-                       (and (search-backward "@" (line-beginning-position) t)
-                            (point))))))
-           (when (and at (progn (goto-char at)
-                                (looking-at scribble--hide-markup-open-rx))
-                      (<= pt (match-end 0)))
-             (let ((close (ignore-errors (scan-lists (1- (match-end 0)) 1 0))))
-               (and close (cons at close)))))
-         ;; Point in the body, or right after the closing `}'.
-         (let ((pos (if (eq (char-before pt) ?}) (1- pt) pt))
-               (result nil)
-               (depth 0))
-           (while (and (not result) pos (< depth 20))
-             (setq pos (ignore-errors (scan-lists pos -1 1)))
-             (setq depth (1+ depth))
-             (when (and pos (eq (char-after pos) ?{))
-               (goto-char (1+ pos))
-               (when (looking-back scribble--hide-markup-open-rx
-                                   (line-beginning-position))
-                 (let ((close (ignore-errors (scan-lists pos 1 0))))
-                   (when close
-                     (setq result (cons (match-beginning 0) close)))))))
-           result))))))
+;; (defun scribble--hidden-form-at-point ()
+;;   "Return (BEG . END) of the innermost hidden-markup form around point.
+;; Point counts as inside from just before \"@\" to just after the closing `}'."
+;;   (save-excursion
+;;     (save-match-data
+;;       (let ((pt (point)))
+;;         (or
+;;          ;; Point in or right before the opening "@name[...]{".
+;;          (let ((at (if (eq (char-after) ?@)
+;;                        (point)
+;;                      (save-excursion
+;;                        (and (search-backward "@" (line-beginning-position) t)
+;;                             (point))))))
+;;            (when (and at (progn (goto-char at)
+;;                                 (looking-at scribble--hide-markup-open-rx))
+;;                       (<= pt (match-end 0)))
+;;              (let ((close (ignore-errors (scan-lists (1- (match-end 0)) 1 0))))
+;;                (and close (cons at close)))))
+;;          ;; Point in the body, or right after the closing `}'.
+;;          (let ((pos (if (eq (char-before pt) ?}) (1- pt) pt))
+;;                (result nil)
+;;                (depth 0))
+;;            (while (and (not result) pos (< depth 20))
+;;              (setq pos (ignore-errors (scan-lists pos -1 1)))
+;;              (setq depth (1+ depth))
+;;              (when (and pos (eq (char-after pos) ?{))
+;;                (goto-char (1+ pos))
+;;                (when (looking-back scribble--hide-markup-open-rx
+;;                                    (line-beginning-position))
+;;                  (let ((close (ignore-errors (scan-lists pos 1 0))))
+;;                    (when close
+;;                      (setq result (cons (match-beginning 0) close)))))))
+;;            result))))))
 
-(defun scribble--update-reveal (&optional force-none)
-  "Reveal the markup of the hidden-markup form at point, re-hiding the old one.
-With FORCE-NONE, just re-hide."
-  (let* ((new (and (not force-none)
-                   scribble-hide-markup
-                   scribble-reveal-markup-at-point
-                   (scribble--hidden-form-at-point)))
-         (old scribble--revealed))
-    (unless (and old new
-                 (= (car new) (car old))
-                 (= (cdr new) (cdr old)))
-      (when (or old new)
-        (setq scribble--revealed
-              (and new (cons (copy-marker (car new)) (copy-marker (cdr new)))))
-        (when old
-          (let ((beg (marker-position (car old)))
-                (end (marker-position (cdr old))))
-            (set-marker (car old) nil)
-            (set-marker (cdr old) nil)
-            (when (and beg end (< beg end))
-              (font-lock-flush beg (min end (point-max))))))
-        (when new
-          (font-lock-flush (car new) (cdr new)))))))
+;; (defun scribble--update-reveal (&optional force-none)
+;;   "Reveal the markup of the hidden-markup form at point, re-hiding the old one.
+;; With FORCE-NONE, just re-hide."
+;;   (let* ((new (and (not force-none)
+;;                    scribble-hide-markup
+;;                    scribble-reveal-markup-at-point
+;;                    (scribble--hidden-form-at-point)))
+;;          (old scribble--revealed))
+;;     (unless (and old new
+;;                  (= (car new) (car old))
+;;                  (= (cdr new) (cdr old)))
+;;       (when (or old new)
+;;         (setq scribble--revealed
+;;               (and new (cons (copy-marker (car new)) (copy-marker (cdr new)))))
+;;         (when old
+;;           (let ((beg (marker-position (car old)))
+;;                 (end (marker-position (cdr old))))
+;;             (set-marker (car old) nil)
+;;             (set-marker (cdr old) nil)
+;;             (when (and beg end (< beg end))
+;;               (font-lock-flush beg (min end (point-max))))))
+;;         (when new
+;;           (font-lock-flush (car new) (cdr new)))))))
 
-(defun scribble--reveal-post-command ()
-  (scribble--update-reveal))
+;; (defun scribble--reveal-post-command ()
+;;   (scribble--update-reveal))
 
-(defun scribble--apply-markup-hiding ()
-  (if scribble-hide-markup
-      (add-to-invisibility-spec 'scribble-markup)
-    (remove-from-invisibility-spec 'scribble-markup)))
+;; (defun scribble--apply-markup-hiding ()
+;;   (if scribble-hide-markup
+;;       (add-to-invisibility-spec 'scribble-markup)
+;;     (remove-from-invisibility-spec 'scribble-markup)))
 
-(defun scribble-toggle-markup-hiding (&optional arg)
-  "Toggle hiding of markup around bold/italic forms in this buffer.
-With a prefix ARG, hide markup when ARG is positive, show it otherwise.
-See `scribble-hide-markup-forms'."
-  (interactive "P")
-  (setq-local scribble-hide-markup
-              (if (null arg)
-                  (not scribble-hide-markup)
-                (> (prefix-numeric-value arg) 0)))
-  (scribble--apply-markup-hiding)
-  (message "Scribble markup %s" (if scribble-hide-markup "hidden" "shown")))
+;; (defun scribble-toggle-markup-hiding (&optional arg)
+;;   "Toggle hiding of markup around bold/italic forms in this buffer.
+;; With a prefix ARG, hide markup when ARG is positive, show it otherwise.
+;; See `scribble-hide-markup-forms'."
+;;   (interactive "P")
+;;   (setq-local scribble-hide-markup
+;;               (if (null arg)
+;;                   (not scribble-hide-markup)
+;;                 (> (prefix-numeric-value arg) 0)))
+;;   (scribble--apply-markup-hiding)
+;;   (message "Scribble markup %s" (if scribble-hide-markup "hidden" "shown")))
 
 ;; Compile:
 
@@ -527,6 +530,99 @@ The file is opened with `scribble-view-program'."
            (w32-shell-execute "open" out))
           (t (find-file out)))))
 
+;; Watch:
+
+(defvar-local scribble--watch-process nil
+  "The \"raco scribble --watch\" process for this buffer's file, or nil.")
+
+(defun scribble--watch-buffer-name (file)
+  (format "*scribble-watch: %s*" (file-name-nondirectory file)))
+
+(define-derived-mode scribble-watch-log-mode compilation-mode "Scribble-Watch"
+  "Major mode for the output of \"raco scribble --watch\".
+Errors are clickable as in `compilation-mode'."
+  (setq-local compilation-error-screen-columns nil))
+
+(defun scribble--watch-live-p ()
+  (and scribble--watch-process (process-live-p scribble--watch-process)))
+
+(defun scribble--watch-sentinel (proc event)
+  (let ((buf (process-buffer proc)))
+    (when (buffer-live-p buf)
+      (with-current-buffer buf
+        (let ((inhibit-read-only t))
+          (save-excursion
+            (goto-char (point-max))
+            (insert (format "\n[scribble-watch %s at %s]\n"
+                            (string-trim event)
+                            (format-time-string "%T")))))))))
+
+(defun scribble-watch (&optional args)
+  "Run \"raco scribble --watch\" on the current file with ARGS.
+The file is re-rendered whenever it or a local dependency changes.
+Output accumulates in a dedicated log buffer; see `scribble-watch-log'.
+ARGS default to those of `scribble-compile' (see `scribble--compile-args')."
+  (interactive (list (scribble--compile-args)))
+  (setq args (or args (scribble--compile-args)))
+  (let* ((file (scribble--source-file))
+         (default-directory (file-name-directory file))
+         (log (get-buffer-create (scribble--watch-buffer-name file)))
+         (cmd `(,scribble-raco-program "scribble" "--watch"
+                ,@(scribble--expand-args args)
+                ,(file-name-nondirectory file))))
+    (when (scribble--watch-live-p)
+      (if (y-or-n-p "Watcher already running; restart it? ")
+          (scribble-watch-stop)
+        (user-error "Watcher already running")))
+    (setq scribble--last-compile-args args)
+    (with-current-buffer log
+      (unless (derived-mode-p 'scribble-watch-log-mode)
+        (scribble-watch-log-mode))
+      (setq default-directory (file-name-directory file))
+      (let ((inhibit-read-only t))
+        (goto-char (point-max))
+        (unless (bobp) (insert "\n"))
+        (insert (format "[scribble-watch started at %s]\n%s\n\n"
+                        (format-time-string "%T")
+                        (mapconcat #'shell-quote-argument cmd " ")))))
+    (setq scribble--watch-process
+          (make-process :name "scribble-watch"
+                        :buffer log
+                        :command cmd
+                        :connection-type 'pipe
+                        :noquery t
+                        :filter #'compilation-filter
+                        :sentinel #'scribble--watch-sentinel))
+    (add-hook 'kill-buffer-hook #'scribble-watch-stop nil t)
+    (display-buffer log)
+    (message "Watching %s" (file-name-nondirectory file))))
+
+(defun scribble-watch-stop ()
+  "Stop the \"raco scribble --watch\" process of the current buffer."
+  (interactive)
+  (if (not (scribble--watch-live-p))
+      (when (called-interactively-p 'interactive)
+        (message "No watcher running"))
+    (delete-process scribble--watch-process)
+    (setq scribble--watch-process nil)
+    (when (called-interactively-p 'interactive)
+      (message "Watcher stopped"))))
+
+(defun scribble-watch-toggle (&optional args)
+  "Start `scribble-watch' with ARGS, or stop it if it is running."
+  (interactive (list (scribble--compile-args)))
+  (if (scribble--watch-live-p)
+      (progn (scribble-watch-stop) (message "Watcher stopped"))
+    (scribble-watch args)))
+
+(defun scribble-watch-log ()
+  "Display the watch log buffer of the current file."
+  (interactive)
+  (let ((buf (get-buffer (scribble--watch-buffer-name (scribble--source-file)))))
+    (if buf
+        (display-buffer buf)
+      (user-error "No watch log for this file"))))
+
 ;;;###autoload (autoload 'scribble-compile "scribble-minor" nil t)
 (transient-define-prefix scribble-compile ()
   "Compile the current Scribble file with raco scribble."
@@ -553,8 +649,10 @@ The file is opened with `scribble-view-program'."
     ("-y" "Make (update compiled files)" "--make")
     ("-e" "Errortrace"       "--errortrace")]]
   ["Actions"
-   ("c" "Compile"     scribble-compile-run)
-   ("v" "View output" scribble-view)])
+   [("c" "Compile"     scribble-compile-run)
+    ("v" "View output" scribble-view)]
+   [("w" "Watch / stop watching" scribble-watch-toggle)
+    ("L" "Watch log"   scribble-watch-log)]])
 
 ;; Menu and Keymap:
 
@@ -568,16 +666,23 @@ The file is opened with `scribble-view-program'."
     (define-key km [scribble-customize]
       '(menu-item "Customize..." scribble-customize
                   :help "Set Emacs customization options for Scribble"))
-    (define-key km [scribble-toggle-markup-hiding]
-      '(menu-item "Hide Markup" scribble-toggle-markup-hiding
-                  :button (:toggle . scribble-hide-markup)
-                  :help "Hide @bold{...}-style markup, showing only styled text"))
+;;     (define-key km [scribble-toggle-markup-hiding]
+;;       '(menu-item "Hide Markup" scribble-toggle-markup-hiding
+;;                   :button (:toggle . scribble-hide-markup)
+;;                   :help "Hide @bold{...}-style markup, showing only styled text"))
     (define-key km [scribble-compile]
       '(menu-item "Compile..." scribble-compile
                   :help "Compile to HTML, PDF, ... with raco scribble"))
     (define-key km [scribble-view]
       '(menu-item "View Output" scribble-view
                   :help "View the output of the last compile"))
+    (define-key km [scribble-watch-log]
+      '(menu-item "Show Watch Log" scribble-watch-log
+                  :help "Display the raco scribble --watch log"))
+    (define-key km [scribble-watch-toggle]
+      '(menu-item "Watch" scribble-watch-toggle
+                  :button (:toggle . (scribble--watch-live-p))
+                  :help "Re-render on every change with raco scribble --watch"))
     (define-key km [scribble-wrap-region]
       '(menu-item "Wrap Region in Form..." scribble-wrap-region
                   :help "Wrap the region in @form{...}"))
@@ -588,7 +693,7 @@ The file is opened with `scribble-view-program'."
     (define-key km (kbd "C-c C-b") #'scribble-compile)
     (define-key km (kbd "C-c C-v") #'scribble-view)
     (define-key km (kbd "C-c C-w") #'scribble-wrap-region)
-    (define-key km (kbd "C-c C-x C-m") #'scribble-toggle-markup-hiding)
+;;     (define-key km (kbd "C-c C-x C-m") #'scribble-toggle-markup-hiding)
     (define-key km [menu-bar Scribble] (cons "Scribble" scribble-minor-mode-menu))
     km))
 
@@ -613,23 +718,23 @@ Enabled automatically for Scribble langs; see
         (setq-local imenu-case-fold-search nil)
         (setq-local outline-regexp scribble-outline-regexp)
         (setq-local outline-level #'scribble-outline-level)
-        (unless (memq 'invisible font-lock-extra-managed-props)
-          (setq-local font-lock-extra-managed-props
-                      (cons 'invisible font-lock-extra-managed-props)))
-        (scribble--apply-markup-hiding)
-        (add-hook 'post-command-hook #'scribble--reveal-post-command nil t)
+;;         (unless (memq 'invisible font-lock-extra-managed-props)
+;;           (setq-local font-lock-extra-managed-props
+;;                       (cons 'invisible font-lock-extra-managed-props)))
+;;         (scribble--apply-markup-hiding)
+;;         (add-hook 'post-command-hook #'scribble--reveal-post-command nil t)
         (font-lock-add-keywords nil scribble--semantic-font-lock-keywords
                                 'append))
     (font-lock-remove-keywords nil scribble--semantic-font-lock-keywords)
-    (remove-hook 'post-command-hook #'scribble--reveal-post-command t)
-    (scribble--update-reveal t)
-    (remove-from-invisibility-spec 'scribble-markup)
-    ;; Clear our `invisible' props while font-lock still manages them.
-    (save-restriction
-      (widen)
-      (font-lock-unfontify-region (point-min) (point-max)))
-    (setq-local font-lock-extra-managed-props
-                (remq 'invisible font-lock-extra-managed-props))
+;;     (remove-hook 'post-command-hook #'scribble--reveal-post-command t)
+;;     (scribble--update-reveal t)
+;;     (remove-from-invisibility-spec 'scribble-markup)
+;;     ;; Clear our `invisible' props while font-lock still manages them.
+;;     (save-restriction
+;;       (widen)
+;;       (font-lock-unfontify-region (point-min) (point-max)))
+;;     (setq-local font-lock-extra-managed-props
+;;                 (remq 'invisible font-lock-extra-managed-props))
     (kill-local-variable 'outline-regexp)
     (kill-local-variable 'outline-level))
   (font-lock-flush))
