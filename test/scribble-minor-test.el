@@ -184,6 +184,105 @@
     (font-lock-ensure)
     (should (scribble-test-lacks-face "word" 'scribble-bold-face))))
 
+;;; Partial refontification
+;;
+;; `racket-hash-lang-mode' refontifies just the changed text (jit-lock
+;; marks only the changed chars, and its fontify-region function skips
+;; `font-lock-extend-region-functions'), so a region often starts in the
+;; middle of a form.  `scribble-test-refontify' does what its
+;; `racket--hash-lang-tokens+fontify' does on such a region.
+
+(defun scribble-test-refontify (beg end)
+  "Refontify just BEG..END, as `racket-hash-lang-mode' does."
+  (with-silent-modifications
+    (save-excursion
+      (font-lock-unfontify-region beg end)
+      (font-lock-fontify-keywords-region beg end))))
+
+(defun scribble-test-refontify-needle (needle &optional from to)
+  "Refontify NEEDLE's chars FROM (default 0) to TO (default its length)."
+  (let ((beg (scribble-test-pos needle)))
+    (scribble-test-refontify (+ beg (or from 0))
+                             (+ beg (or to (length needle))))))
+
+(defun scribble-test-face-once (needle face)
+  "Non-nil when every char of NEEDLE has FACE exactly once."
+  (let ((beg (scribble-test-pos needle)))
+    (cl-loop for p from beg below (+ beg (length needle))
+             always (= 1 (cl-count face (scribble-test-faces-at p))))))
+
+(ert-deftest scribble-test-refontify-mid-body ()
+  ;; The original flicker: typing inside @section{...} lost the face.
+  (scribble-test-with-buffer "@section{Hello world}"
+    (scribble-test-refontify-needle "world" 1 3)
+    (should (scribble-test-face-once "Hello world"
+                                     'scribble-section-heading-face))))
+
+(ert-deftest scribble-test-refontify-typing ()
+  (scribble-test-with-buffer "intro @section{Hello} outro"
+    (goto-char (+ (scribble-test-pos "Hello") 3))
+    (insert "X")                        ; no props inherited
+    (scribble-test-refontify (1- (point)) (point))
+    (should (scribble-test-face-once "HelXlo" 'scribble-section-heading-face))
+    (should (scribble-test-lacks-face "outro" 'scribble-section-heading-face))))
+
+(ert-deftest scribble-test-refontify-from-name ()
+  (scribble-test-with-buffer "@section{Hello}"
+    (scribble-test-refontify (scribble-test-pos "tion")
+                             (+ (scribble-test-pos "Hello") 3))
+    (should (scribble-test-face-once "Hello" 'scribble-section-heading-face))
+    (should (scribble-test-lacks-face "@section{" 'scribble-section-heading-face))))
+
+(ert-deftest scribble-test-refontify-from-args ()
+  (scribble-test-with-buffer "@section[#:tag \"intro\"]{Hello}"
+    (scribble-test-refontify (scribble-test-pos "tag")
+                             (+ (scribble-test-pos "Hello") 2))
+    (should (scribble-test-face-once "Hello" 'scribble-section-heading-face))
+    (should (scribble-test-lacks-face "intro" 'scribble-section-heading-face))))
+
+(ert-deftest scribble-test-refontify-multiline-body ()
+  (scribble-test-with-buffer "@bold{first\nsecond}"
+    (scribble-test-refontify-needle "second" 2 4)
+    (should (scribble-test-face-once "first\nsecond" 'scribble-bold-face))))
+
+(ert-deftest scribble-test-refontify-multiline-args ()
+  (scribble-test-with-buffer "@section(~tag:\n  \"t\"){Hello}"
+    (scribble-test-refontify-needle "Hello" 1 3)
+    (should (scribble-test-face-once "Hello" 'scribble-section-heading-face))))
+
+(ert-deftest scribble-test-refontify-nested ()
+  (scribble-test-with-buffer "@section{outer @bold{inner} tail}"
+    (scribble-test-refontify-needle "inner" 1 3)
+    (should (scribble-test-face-once "inner" 'scribble-section-heading-face))
+    (should (scribble-test-face-once "inner" 'scribble-bold-face))
+    (should (scribble-test-face-once "outer @bold{inner} tail"
+                                     'scribble-section-heading-face))
+    (should (scribble-test-lacks-face "outer" 'scribble-bold-face))
+    (should (scribble-test-lacks-face "tail" 'scribble-bold-face))))
+
+(ert-deftest scribble-test-refontify-no-duplicates ()
+  ;; Overlapping refontifications never stack the face.
+  (scribble-test-with-buffer "@section{Hello world} after"
+    (scribble-test-refontify-needle "Hello" 1 2)
+    (scribble-test-refontify-needle "Hello world" 3 8)
+    (scribble-test-refontify (scribble-test-pos "world") (point-max))
+    (should (scribble-test-face-once "Hello world"
+                                     'scribble-section-heading-face))
+    (should (scribble-test-lacks-face "after" 'scribble-section-heading-face))))
+
+(ert-deftest scribble-test-refontify-after-form ()
+  (scribble-test-with-buffer "@bold{a} b @bold{c}"
+    (scribble-test-refontify-needle " b ")
+    (should (scribble-test-lacks-face " b " 'scribble-bold-face))
+    (should (scribble-test-face-once "a" 'scribble-bold-face))
+    (should (scribble-test-face-once "c" 'scribble-bold-face))))
+
+(ert-deftest scribble-test-refontify-unbalanced ()
+  (scribble-test-with-buffer "@section{never closed\nmore"
+    (scribble-test-refontify-needle "closed" 1 3)
+    (should (scribble-test-lacks-face "never closed"
+                                      'scribble-section-heading-face))))
+
 ;;; Imenu and outline
 
 (ert-deftest scribble-test-imenu ()

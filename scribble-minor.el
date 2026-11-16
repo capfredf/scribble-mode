@@ -9,6 +9,7 @@
 
 ;;-------------------------------------------------------------------- Requires
 
+(require 'cl-lib)
 (require 'compile)
 (require 'imenu)
 (require 'outline)
@@ -277,31 +278,75 @@ and contain strings."
         (if end (goto-char end) (setq ok nil))))
     (and ok (eq (char-after) ?{) (point))))
 
+(defun scribble--search-start (pos)
+  "Where to start searching for forms that may cover POS.
+That is the start of the line holding the outermost bracket enclosing
+POS, or of POS's own line when no bracket encloses it.  Argument groups
+right before that bracket are included, as they may span lines, as in
+\"@section(~tag:\\n \\\"t\\\"){Title}\"."
+  (save-excursion
+    (let ((p pos) up)
+      (while (setq up (ignore-errors (scan-lists p -1 1)))
+        (setq p up))
+      (goto-char p)
+      (while (and (memq (char-before) '(?\] ?\)))
+                  (setq up (ignore-errors (scan-lists (point) -1 0))))
+        (goto-char up))
+      (line-beginning-position))))
+
 (defun scribble--make-body-matcher (name-rx)
   "Return a font-lock matcher for @NAME-RX ARGS {BODY}.
 ARGS is any sequence of \"[...]\" (Racket) and \"(...)\" (Rhombus) groups.
 On success, match group 1 spans BODY, up to the balancing `}';
-group 2 spans the opening \"@NAME ARGS {\" and group 3 the closing `}'."
-  (let ((rx (concat "@" name-rx "\\_>")))
+group 2 spans the opening \"@NAME ARGS {\" and group 3 the closing `}'.
+Groups 1-3 are clipped to the region being fontified.
+
+The region may start in the middle of a form: `racket-hash-lang-mode'
+refontifies just the changed text (or the changed tokens), without
+`font-lock-extend-region-functions'.  So a pass starts searching from
+`scribble--search-start' of the region start, skips forms that end
+before the region, and clips the rest to it -- re-applying a `prepend'
+face to text outside the region would stack duplicates."
+  (let ((rx (concat "@" name-rx "\\_>"))
+        (pass nil))                     ; (BUFFER LIMIT START) of this pass
     (lambda (limit)
-      (let (found)
-        (while (and (not found) (re-search-forward rx limit t))
-          (let* ((beg (match-beginning 0))
-                 (after-name (point))
-                 (open (scribble--skip-form-args limit))
-                 (close (and open
-                             (condition-case nil
-                                 (1- (scan-lists open 1 0))
-                               (scan-error nil)))))
-            (if (not close)
-                (goto-char after-name)
-              ;; Continue inside the body, so nested forms match too.
-              (goto-char (1+ open))
-              (set-match-data (list beg (1+ close)
-                                    (1+ open) close
-                                    beg (1+ open)
-                                    close (1+ close)))
-              (setq found t))))
+      ;; The first call of a pass has point at the region start.
+      (unless (and pass
+                   (eq (nth 0 pass) (current-buffer))
+                   (= (nth 1 pass) limit))
+        (setq pass (list (current-buffer) limit (point)))
+        (goto-char (scribble--search-start (point))))
+      (let ((start (nth 2 pass))
+            found)
+        (cl-flet ((clip (b e)
+                    (let ((b (max b start)))
+                      (list b (max b (min e limit))))))
+          (while (and (not found) (re-search-forward rx limit t))
+            (let* ((beg (match-beginning 0))
+                   (after-name (point))
+                   (open (scribble--skip-form-args limit))
+                   (close (and open
+                               (condition-case nil
+                                   (1- (scan-lists open 1 0))
+                                 (scan-error nil)))))
+              (cond
+               ((not close)
+                (goto-char after-name))
+               ((< close start)
+                ;; Entirely before the region, nested forms too.
+                (goto-char (1+ close)))
+               (t
+                ;; Continue inside the body, so nested forms match too.
+                ;; Point stays past BEG, as font-lock requires.
+                (goto-char (1+ open))
+                (set-match-data (append (list beg (1+ close))
+                                        (clip (1+ open) close)
+                                        (clip beg (1+ open))
+                                        (clip close (1+ close))))
+                (setq found t))))))
+        ;; A pass ends when we return nil or point reaches LIMIT.
+        (when (or (not found) (>= (point) limit))
+          (setq pass nil))
         found))))
 
 (defconst scribble--semantic-font-lock-keywords
