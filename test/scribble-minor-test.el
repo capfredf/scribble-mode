@@ -93,6 +93,24 @@
     (scribble-minor-mode-maybe-enable "racket/base")
     (should scribble-minor-mode)))
 
+(ert-deftest scribble-test-comment-dwim ()
+  (dolist (case '(("rhombus/scribble" . "@// ")
+                  ("scribble/manual/lang" . "@;; ")))
+    (with-temp-buffer
+      (scribble-test-mode)
+      ;; What `racket-hash-lang-mode' sets from the lang, e.g. Rhombus.
+      (setq-local comment-start "//")
+      (setq-local comment-use-syntax nil)
+      (scribble-minor-mode-maybe-enable (car case))
+      (comment-dwim nil)
+      (should (equal (buffer-string) (cdr case)))
+      (erase-buffer)
+      (insert "Some text")
+      (comment-region (point-min) (point-max))
+      (should (equal (buffer-string) (concat (cdr case) "Some text")))
+      (uncomment-region (point-min) (point-max))
+      (should (equal (buffer-string) "Some text")))))
+
 (ert-deftest scribble-test-auto-mode ()
   (should (eq (assoc-default "doc.scrbl" auto-mode-alist #'string-match-p)
               'racket-hash-lang-mode)))

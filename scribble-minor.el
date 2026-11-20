@@ -225,7 +225,34 @@ Intended for `racket-hash-lang-module-language-hook'."
   (when (and module-language
              (string-match-p scribble-minor-mode-module-language-regexp
                              module-language))
+    (scribble--set-comment-delimiters module-language)
     (scribble-minor-mode 1)))
+
+(defcustom scribble-comment-starts
+  '(("\\`rhombus/" . "@//")
+    (""            . "@;;"))
+  "Alist from module-language regexps to line comment starts.
+The first entry whose regexp matches the lang wins.  These replace the
+delimiters `racket-hash-lang-mode' gets from the lang, which are the
+host language's (\"//\" for Rhombus) rather than the ones for prose."
+  :type '(alist :key-type regexp :value-type string)
+  :group 'scribble)
+
+(defun scribble--set-comment-delimiters (module-language)
+  "Set the comment variables for MODULE-LANGUAGE, a Scribble lang.
+`racket-hash-lang-mode' sets them just before running
+`racket-hash-lang-module-language-hook', so we override them there."
+  (let ((start (assoc-default module-language scribble-comment-starts
+                              #'string-match-p)))
+    (when start
+      (setq-local comment-start      start)
+      (setq-local comment-continue   start)
+      (setq-local comment-end        "")
+      (setq-local comment-padding    " ")
+      (setq-local comment-use-syntax nil)
+      (setq-local comment-start-skip nil)
+      (setq-local comment-end-skip   nil)
+      (comment-normalize-vars))))
 
 ;;;###autoload
 (add-hook 'racket-hash-lang-module-language-hook
