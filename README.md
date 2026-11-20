@@ -4,3 +4,15 @@
 It is inspired by Neil Van Dyke's [scribble mode](https://www.neilvandyke.org/scribble-emacs/). Under the hood, `scribble-mode` does limited parsing on its own, whereas `scribble-minor-mode` leaves such heavy-lifting jobs to `racket-hash-lang-mode`. 
 
 `scribble-minor-mode` provides a uniform transient menu for compiling scribble files.
+
+## Multi-file documents
+
+As with AUCTeX's `TeX-master`, a file that is part of a larger document can name its master file in a file-local variable at its end. Compile, view and watch commands invoked from that file then act on the master:
+
+```
+@;; Local Variables:
+@;; scribble-master: "main.scrbl"
+@;; End:
+```
+
+The path is relative to the file's directory, and `.scrbl` may be omitted. The default, `t`, means the file is its own master. In Rhombus files use `@//` instead of `@;;`.

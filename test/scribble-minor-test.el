@@ -361,6 +361,52 @@
                    "/docs/book.tex"))
     (setq buffer-file-name nil)))
 
+(ert-deftest scribble-test-master-file ()
+  (let* ((dir (file-name-as-directory (make-temp-file "scribble-test" t)))
+         (main (expand-file-name "main.scrbl" dir))
+         (sub (expand-file-name "sub/ch1.scrbl" dir)))
+    (unwind-protect
+        (progn
+          (make-directory (file-name-directory sub))
+          (write-region "" nil main)
+          (write-region "" nil sub)
+          (with-temp-buffer
+            (setq buffer-file-name sub)
+            (should (equal (scribble--source-file) sub))
+            (setq scribble-master nil)
+            (should (equal (scribble--source-file) sub))
+            (setq scribble-master "../main.scrbl")
+            (should (equal (scribble--source-file) main))
+            (setq scribble-master "../main")
+            (should (equal (scribble--source-file) main))
+            (should (equal (scribble--output-file '("--html"))
+                           (expand-file-name "main.html" dir)))
+            (setq scribble-master "../missing.scrbl")
+            (should-error (scribble--source-file) :type 'user-error)
+            (setq buffer-file-name nil)))
+      (delete-directory dir t))))
+
+(ert-deftest scribble-test-master-local-variable ()
+  (let* ((dir (file-name-as-directory (make-temp-file "scribble-test" t)))
+         (sub (expand-file-name "ch1.scrbl" dir))
+         (enable-local-variables :safe)
+         ;; racket-mode is not loaded under emacs -Q.
+         (auto-mode-alist '(("\\.scrbl\\'" . text-mode))))
+    (unwind-protect
+        (progn
+          (write-region "" nil (expand-file-name "main.scrbl" dir))
+          (with-temp-file sub
+            (insert "#lang scribble/base\nHi.\n\n"
+                    "@;; Local Variables:\n"
+                    "@;; scribble-master: \"main.scrbl\"\n"
+                    "@;; End:\n"))
+          (with-current-buffer (find-file-noselect sub)
+            (unwind-protect
+                (should (equal (scribble--source-file)
+                               (expand-file-name "main.scrbl" dir)))
+              (kill-buffer))))
+      (delete-directory dir t))))
+
 (ert-deftest scribble-test-compile-args-defaults ()
   (with-temp-buffer
     (let ((transient-values nil)
@@ -393,7 +439,7 @@
           (with-current-buffer (find-file-noselect src)
             (cl-letf (((symbol-function 'display-buffer) #'ignore))
               (scribble-watch '("--html")))
-            (let ((proc scribble--watch-process))
+            (let ((proc (scribble--watch-process)))
               (should (process-live-p proc))
               (should (eq (process-buffer proc) (get-buffer log-name)))
               (should (scribble-test-wait-for
@@ -407,7 +453,7 @@
               (scribble-watch-stop)
               (should (scribble-test-wait-for
                        (lambda () (not (process-live-p proc))) nil 5))
-              (should-not scribble--watch-process))
+              (should-not (scribble--watch-process)))
             (with-current-buffer log-name
               (should (derived-mode-p 'scribble-watch-log-mode))
               (should (string-match-p "raco scribble --watch --html doc.scrbl"
@@ -417,7 +463,7 @@
             ;; Killing the source buffer stops a running watcher.
             (cl-letf (((symbol-function 'display-buffer) #'ignore))
               (scribble-watch '("--html")))
-            (let ((proc scribble--watch-process))
+            (let ((proc (scribble--watch-process)))
               (kill-buffer)
               (should (scribble-test-wait-for
                        (lambda () (not (process-live-p proc))) nil 5)))))

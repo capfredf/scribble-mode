@@ -550,8 +550,36 @@ file in Emacs."
     ("--typst"     . ".typ"))
   "Alist from raco scribble format flags to output file suffixes.")
 
+(defvar-local scribble-master t
+  "The master file of this Scribble document, as in AUCTeX's `TeX-master'.
+When t (or nil), the current file is the one to compile, view and
+watch.  When a string, it names the master file, relative to the
+directory of the current file; a name without an extension may omit
+\".scrbl\".  Usually set as a file-local variable, at the end of a file:
+
+  @;; Local Variables:
+  @;; scribble-master: \"main.scrbl\"
+  @;; End:")
+;;;###autoload
+(put 'scribble-master 'safe-local-variable
+     (lambda (v) (or (booleanp v) (stringp v))))
+
+(defun scribble--master-file (file master)
+  "The master file of FILE given MASTER, a value of `scribble-master'."
+  (if (not (stringp master))
+      file
+    (let ((path (expand-file-name master (file-name-directory file))))
+      (cond ((file-exists-p path) path)
+            ((and (not (file-name-extension path))
+                  (file-exists-p (concat path ".scrbl")))
+             (concat path ".scrbl"))
+            (t (user-error "Master file %s does not exist" path))))))
+
 (defun scribble--source-file ()
-  (or buffer-file-name (user-error "Buffer is not visiting a file")))
+  "The file to compile, view or watch: the master of the current file."
+  (scribble--master-file
+   (or buffer-file-name (user-error "Buffer is not visiting a file"))
+   scribble-master))
 
 (defun scribble--read-directory (prompt initial-input _history)
   (expand-file-name (read-directory-name prompt nil nil nil initial-input)))
@@ -593,7 +621,8 @@ last compile in this buffer, else the saved `scribble-compile' value."
         (t '("--typst-pdf"))))
 
 (defun scribble-compile-run (&optional args)
-  "Run raco scribble on the current file with ARGS from `scribble-compile'."
+  "Run raco scribble on the current master file with ARGS.
+ARGS come from `scribble-compile'.  See `scribble-master'."
   (interactive (list (scribble--compile-args)))
   (setq args (or args (scribble--compile-args)))
   (let* ((file (scribble--source-file))
@@ -606,7 +635,7 @@ last compile in this buffer, else the saved `scribble-compile' value."
                         " "))))
 
 (defun scribble-view (&optional args)
-  "View the output of compiling the current file with ARGS.
+  "View the output of compiling the current master file with ARGS.
 ARGS default to those of the last compile (see `scribble--compile-args').
 The file is opened with `scribble-view-program'."
   (interactive (list (scribble--compile-args)))
@@ -622,9 +651,6 @@ The file is opened with `scribble-view-program'."
 
 ;; Watch:
 
-(defvar-local scribble--watch-process nil
-  "The \"raco scribble --watch\" process for this buffer's file, or nil.")
-
 (defun scribble--watch-buffer-name (file)
   (format "*scribble-watch: %s*" (file-name-nondirectory file)))
 
@@ -633,8 +659,24 @@ The file is opened with `scribble-view-program'."
 Errors are clickable as in `compilation-mode'."
   (setq-local compilation-error-screen-columns nil))
 
+(defun scribble--watch-process ()
+  "The live \"raco scribble --watch\" process of the current master, or nil.
+The process belongs to the master file, so it is shared by every file
+naming that master in `scribble-master'."
+  (let* ((log (get-buffer (scribble--watch-buffer-name (scribble--source-file))))
+         (proc (and log (get-buffer-process log))))
+    (and proc (process-live-p proc) proc)))
+
 (defun scribble--watch-live-p ()
-  (and scribble--watch-process (process-live-p scribble--watch-process)))
+  (and (scribble--watch-process) t))
+
+(defun scribble--watch-stop-owned ()
+  "Stop the watchers started from the current buffer.
+For `kill-buffer-hook'."
+  (let ((buf (current-buffer)))
+    (dolist (proc (process-list))
+      (when (eq (process-get proc 'scribble-owner) buf)
+        (delete-process proc)))))
 
 (defun scribble--watch-sentinel (proc event)
   (let ((buf (process-buffer proc)))
@@ -648,7 +690,8 @@ Errors are clickable as in `compilation-mode'."
                             (format-time-string "%T")))))))))
 
 (defun scribble-watch (&optional args)
-  "Run \"raco scribble --watch\" on the current file with ARGS.
+  "Run \"raco scribble --watch\" on the current master file with ARGS.
+See `scribble-master'.
 The file is re-rendered whenever it or a local dependency changes.
 Output accumulates in a dedicated log buffer; see `scribble-watch-log'.
 ARGS default to those of `scribble-compile' (see `scribble--compile-args')."
@@ -675,28 +718,28 @@ ARGS default to those of `scribble-compile' (see `scribble--compile-args')."
         (insert (format "[scribble-watch started at %s]\n%s\n\n"
                         (format-time-string "%T")
                         (mapconcat #'shell-quote-argument cmd " ")))))
-    (setq scribble--watch-process
-          (make-process :name "scribble-watch"
-                        :buffer log
-                        :command cmd
-                        :connection-type 'pipe
-                        :noquery t
-                        :filter #'compilation-filter
-                        :sentinel #'scribble--watch-sentinel))
-    (add-hook 'kill-buffer-hook #'scribble-watch-stop nil t)
+    (process-put (make-process :name "scribble-watch"
+                               :buffer log
+                               :command cmd
+                               :connection-type 'pipe
+                               :noquery t
+                               :filter #'compilation-filter
+                               :sentinel #'scribble--watch-sentinel)
+                 'scribble-owner (current-buffer))
+    (add-hook 'kill-buffer-hook #'scribble--watch-stop-owned nil t)
     (display-buffer log)
     (message "Watching %s" (file-name-nondirectory file))))
 
 (defun scribble-watch-stop ()
-  "Stop the \"raco scribble --watch\" process of the current buffer."
+  "Stop the \"raco scribble --watch\" process of the current master file."
   (interactive)
-  (if (not (scribble--watch-live-p))
+  (let ((proc (scribble--watch-process)))
+    (if (not proc)
+        (when (called-interactively-p 'interactive)
+          (message "No watcher running"))
+      (delete-process proc)
       (when (called-interactively-p 'interactive)
-        (message "No watcher running"))
-    (delete-process scribble--watch-process)
-    (setq scribble--watch-process nil)
-    (when (called-interactively-p 'interactive)
-      (message "Watcher stopped"))))
+        (message "Watcher stopped")))))
 
 (defun scribble-watch-toggle (&optional args)
   "Start `scribble-watch' with ARGS, or stop it if it is running."
@@ -706,7 +749,7 @@ ARGS default to those of `scribble-compile' (see `scribble--compile-args')."
     (scribble-watch args)))
 
 (defun scribble-watch-log ()
-  "Display the watch log buffer of the current file."
+  "Display the watch log buffer of the current master file."
   (interactive)
   (let ((buf (get-buffer (scribble--watch-buffer-name (scribble--source-file)))))
     (if buf
@@ -715,7 +758,8 @@ ARGS default to those of `scribble-compile' (see `scribble--compile-args')."
 
 ;;;###autoload (autoload 'scribble-compile "scribble-minor" nil t)
 (transient-define-prefix scribble-compile ()
-  "Compile the current Scribble file with raco scribble."
+  "Compile the current Scribble master file with raco scribble.
+See `scribble-master'."
   :incompatible '(("--html" "--htmls" "--markdown" "--text"
                    "--pdf" "--xelatex" "--lualatex" "--typst-pdf"
                    "--latex" "--typst"))
