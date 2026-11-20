@@ -228,6 +228,20 @@ Intended for `racket-hash-lang-module-language-hook'."
     (scribble--set-comment-delimiters module-language)
     (scribble-minor-mode 1)))
 
+(defun scribble--xp-eldoc-around (fn &rest args)
+  "Around advice for `racket-xp-eldoc-point-or-sexp-head'.
+That function runs on every cursor move and calls `backward-up-list',
+which in `racket-hash-lang-mode' does one blocking back-end round trip
+per sexp -- per word, in prose -- making movement lag in Scribble
+buffers.  There, find the enclosing form with the syntax table instead."
+  (if (bound-and-true-p scribble-minor-mode)
+      (let ((forward-sexp-function nil))
+        (apply fn args))
+    (apply fn args)))
+
+(advice-add 'racket-xp-eldoc-point-or-sexp-head
+            :around #'scribble--xp-eldoc-around)
+
 (defcustom scribble-comment-starts
   '(("\\`rhombus/" . "@//")
     (""            . "@;;"))
