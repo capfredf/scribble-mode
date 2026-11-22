@@ -564,16 +564,25 @@ file in Emacs."
     ("--typst"     . ".typ"))
   "Alist from raco scribble format flags to output file suffixes.")
 
-(defvar-local scribble-master t
+(defcustom scribble-master nil
   "The master file of this Scribble document, as in AUCTeX's `TeX-master'.
-When t (or nil), the current file is the one to compile, view and
-watch.  When a string, it names the master file, relative to the
-directory of the current file; a name without an extension may omit
-\".scrbl\".  Usually set as a file-local variable, at the end of a file:
+When t, the current file is the one to compile, view and watch.  When
+a string, it names the master file, relative to the directory of the
+current file; a name without an extension may omit \".scrbl\".  When
+nil, the master is unknown: opening the file asks for it, and records
+the answer as a file-local variable at the end of the file:
 
   @;; Local Variables:
   @;; scribble-master: \"main.scrbl\"
-  @;; End:")
+  @;; End:
+
+Set the default to t to never ask and treat every file as its own
+master."
+  :type '(choice (const :tag "Ask" nil)
+                 (const :tag "This file" t)
+                 (string :tag "Master file"))
+  :group 'scribble)
+(make-variable-buffer-local 'scribble-master)
 ;;;###autoload
 (put 'scribble-master 'safe-local-variable
      (lambda (v) (or (booleanp v) (stringp v))))
@@ -589,11 +598,53 @@ directory of the current file; a name without an extension may omit
              (concat path ".scrbl"))
             (t (user-error "Master file %s does not exist" path))))))
 
+(defun scribble--read-master (file)
+  "Ask for the master file of FILE; return a value of `scribble-master'."
+  (let* ((dir (file-name-directory file))
+         (master (expand-file-name
+                  (read-file-name "Master file (default this file): "
+                                  dir file t nil
+                                  (lambda (f)
+                                    (or (file-directory-p f)
+                                        (string-suffix-p ".scrbl" f)))))))
+    (if (file-equal-p master file)
+        t
+      (file-relative-name master dir))))
+
+(defun scribble-set-master (master)
+  "Set the master file of the current buffer to MASTER.
+Interactively, ask for it.  Also record it as a file-local variable,
+so it is used the next time the file is visited."
+  (interactive
+   (list (scribble--read-master
+          (or buffer-file-name (user-error "Buffer is not visiting a file")))))
+  (setq scribble-master master)
+  (save-excursion
+    (add-file-local-variable 'scribble-master master))
+  master)
+
+(defun scribble--maybe-ask-master (buffer)
+  "Ask for the master of BUFFER if it has none and is selected."
+  (when (and (buffer-live-p buffer)
+             (eq buffer (window-buffer (selected-window)))
+             (not (minibufferp)))
+    (with-current-buffer buffer
+      (when (and (bound-and-true-p scribble-minor-mode) buffer-file-name
+                 (scribble--master-unknown-p))
+        (scribble-set-master (scribble--read-master buffer-file-name))))))
+
+(defun scribble--master-unknown-p ()
+  "Non-nil if the current buffer's master must be asked for."
+  (and (null scribble-master) (not noninteractive)))
+
 (defun scribble--source-file ()
-  "The file to compile, view or watch: the master of the current file."
-  (scribble--master-file
-   (or buffer-file-name (user-error "Buffer is not visiting a file"))
-   scribble-master))
+  "The file to compile, view or watch: the master of the current file.
+When the master is unknown, ask for it; see `scribble-master'."
+  (let ((file (or buffer-file-name
+                  (user-error "Buffer is not visiting a file"))))
+    (when (scribble--master-unknown-p)
+      (scribble-set-master (scribble--read-master file)))
+    (scribble--master-file file scribble-master)))
 
 (defun scribble--read-directory (prompt initial-input _history)
   (expand-file-name (read-directory-name prompt nil nil nil initial-input)))
@@ -677,7 +728,11 @@ Errors are clickable as in `compilation-mode'."
   "The live \"raco scribble --watch\" process of the current master, or nil.
 The process belongs to the master file, so it is shared by every file
 naming that master in `scribble-master'."
-  (let* ((log (get-buffer (scribble--watch-buffer-name (scribble--source-file))))
+  ;; Called from the menu, so never ask for an unknown master: no watcher
+  ;; can have been started without one.
+  (let* ((log (and (not (scribble--master-unknown-p))
+                   (get-buffer (scribble--watch-buffer-name
+                                (scribble--source-file)))))
          (proc (and log (get-buffer-process log))))
     (and proc (process-live-p proc) proc)))
 
@@ -818,6 +873,9 @@ See `scribble-master'."
 ;;       '(menu-item "Hide Markup" scribble-toggle-markup-hiding
 ;;                   :button (:toggle . scribble-hide-markup)
 ;;                   :help "Hide @bold{...}-style markup, showing only styled text"))
+    (define-key km [scribble-set-master]
+      '(menu-item "Set Master File..." scribble-set-master
+                  :help "Choose the master file to compile, view and watch"))
     (define-key km [scribble-compile]
       '(menu-item "Compile..." scribble-compile
                   :help "Compile to HTML, PDF, ... with raco scribble"))
@@ -866,6 +924,11 @@ Enabled automatically for Scribble langs; see
         (setq-local imenu-case-fold-search nil)
         (setq-local outline-regexp scribble-outline-regexp)
         (setq-local outline-level #'scribble-outline-level)
+        ;; We are enabled from a back-end notification, where prompting
+        ;; is unwelcome, so ask for an unknown master once Emacs is idle.
+        (when (and buffer-file-name (scribble--master-unknown-p))
+          (run-with-idle-timer 0 nil #'scribble--maybe-ask-master
+                               (current-buffer)))
 ;;         (unless (memq 'invisible font-lock-extra-managed-props)
 ;;           (setq-local font-lock-extra-managed-props
 ;;                       (cons 'invisible font-lock-extra-managed-props)))

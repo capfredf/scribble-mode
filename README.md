@@ -15,4 +15,6 @@ As with AUCTeX's `TeX-master`, a file that is part of a larger document can name
 @;; End:
 ```
 
-The path is relative to the file's directory, and `.scrbl` may be omitted. The default, `t`, means the file is its own master. In Rhombus files use `@//` instead of `@;;`.
+The path is relative to the file's directory, and `.scrbl` may be omitted. The value `t` means the file is its own master. In Rhombus files use `@//` instead of `@;;`.
+
+When a file names no master, opening it asks for one (press `RET` for the file itself) and adds the answer as the local variable above; save the file to keep it. `M-x scribble-set-master` (also in the Scribble menu) changes it later. To never be asked, `(setq-default scribble-master t)`.

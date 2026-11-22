@@ -373,7 +373,7 @@
           (with-temp-buffer
             (setq buffer-file-name sub)
             (should (equal (scribble--source-file) sub))
-            (setq scribble-master nil)
+            (setq scribble-master t)
             (should (equal (scribble--source-file) sub))
             (setq scribble-master "../main.scrbl")
             (should (equal (scribble--source-file) main))
@@ -405,6 +405,35 @@
                 (should (equal (scribble--source-file)
                                (expand-file-name "main.scrbl" dir)))
               (kill-buffer))))
+      (delete-directory dir t))))
+
+(ert-deftest scribble-test-set-master ()
+  (let* ((dir (file-name-as-directory (make-temp-file "scribble-test" t)))
+         (main (expand-file-name "main.scrbl" dir))
+         (sub (expand-file-name "sub/ch1.scrbl" dir)))
+    (unwind-protect
+        (progn
+          (make-directory (file-name-directory sub))
+          (write-region "" nil main)
+          (write-region "" nil sub)
+          (with-temp-buffer
+            (setq buffer-file-name sub)
+            (setq-local comment-start "@;;")
+            (insert "#lang scribble/base\nHi.\n")
+            (cl-letf (((symbol-function 'read-file-name)
+                       (lambda (&rest _) main)))
+              (should (equal (scribble--read-master sub) "../main.scrbl")))
+            (cl-letf (((symbol-function 'read-file-name)
+                       (lambda (&rest _) sub)))
+              (should (eq (scribble--read-master sub) t)))
+            (scribble-set-master "../main.scrbl")
+            (should (equal scribble-master "../main.scrbl"))
+            (should (equal (scribble--source-file) main))
+            (goto-char (point-min))
+            (should (search-forward
+                     "@;; scribble-master: \"../main.scrbl\"" nil t))
+            (set-buffer-modified-p nil)
+            (setq buffer-file-name nil)))
       (delete-directory dir t))))
 
 (ert-deftest scribble-test-compile-args-defaults ()
