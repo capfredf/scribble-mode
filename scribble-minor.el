@@ -601,6 +601,10 @@ master."
 (defun scribble--read-master (file)
   "Ask for the master file of FILE; return a value of `scribble-master'."
   (let* ((dir (file-name-directory file))
+         ;; After a mouse event (opening the file or choosing the menu
+         ;; item with the mouse) `read-file-name' would pop up the
+         ;; toolkit's file dialog; always use the minibuffer instead.
+         (use-file-dialog nil)
          (master (expand-file-name
                   (read-file-name "Master file (default this file): "
                                   dir file t nil
