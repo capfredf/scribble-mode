@@ -787,14 +787,15 @@ ARGS default to those of `scribble-compile' (see `scribble--compile-args')."
         (insert (format "[scribble-watch started at %s]\n%s\n\n"
                         (format-time-string "%T")
                         (mapconcat #'shell-quote-argument cmd " ")))))
-    (process-put (make-process :name "scribble-watch"
-                               :buffer log
-                               :command cmd
-                               :connection-type 'pipe
-                               :noquery t
-                               :filter #'compilation-filter
-                               :sentinel #'scribble--watch-sentinel)
-                 'scribble-owner (current-buffer))
+    (let ((proc (make-process :name "scribble-watch"
+                              :buffer log
+                              :command cmd
+                              :connection-type 'pipe
+                              :noquery t
+                              :filter #'compilation-filter
+                              :sentinel #'scribble--watch-sentinel)))
+      (process-put proc 'scribble-owner (current-buffer))
+      (process-put proc 'scribble-args args))
     (add-hook 'kill-buffer-hook #'scribble--watch-stop-owned nil t)
     (display-buffer log)
     (message "Watching %s" (file-name-nondirectory file))))
@@ -809,6 +810,20 @@ ARGS default to those of `scribble-compile' (see `scribble--compile-args')."
       (delete-process proc)
       (when (called-interactively-p 'interactive)
         (message "Watcher stopped")))))
+
+(defun scribble-watch-restart (&optional args)
+  "Restart the \"raco scribble --watch\" process of the current master.
+Run it with ARGS, which interactively are those of `scribble-compile'
+when invoked from there, else those of the running watcher.  Start a
+watcher if none is running."
+  (interactive
+   (list (if (eq transient-current-command 'scribble-compile)
+             (transient-args 'scribble-compile)
+           (let ((proc (scribble--watch-process)))
+             (or (and proc (process-get proc 'scribble-args))
+                 (scribble--compile-args))))))
+  (scribble-watch-stop)
+  (scribble-watch args))
 
 (defun scribble-watch-toggle (&optional args)
   "Start `scribble-watch' with ARGS, or stop it if it is running."
@@ -855,6 +870,7 @@ See `scribble-master'."
    [("c" "Compile"     scribble-compile-run)
     ("v" "View output" scribble-view)]
    [("w" "Watch / stop watching" scribble-watch-toggle)
+    ("r" "Restart watcher" scribble-watch-restart)
     ("L" "Watch log"   scribble-watch-log)]])
 
 ;; Menu and Keymap:
@@ -882,6 +898,10 @@ See `scribble-master'."
     (define-key km [scribble-view]
       '(menu-item "View Output" scribble-view
                   :help "View the output of the last compile"))
+    (define-key km [scribble-watch-restart]
+      '(menu-item "Restart Watcher" scribble-watch-restart
+                  :enable (scribble--watch-live-p)
+                  :help "Restart raco scribble --watch"))
     (define-key km [scribble-watch-log]
       '(menu-item "Show Watch Log" scribble-watch-log
                   :help "Display the raco scribble --watch log"))

@@ -479,6 +479,13 @@
                 (insert "#lang scribble/manual\n@title{Hi}\nChanged.\n"))
               (should (scribble-test-wait-for
                        (lambda () (file-exists-p out)) proc))
+              ;; Restarting replaces the process, keeping its args.
+              (cl-letf (((symbol-function 'display-buffer) #'ignore))
+                (call-interactively #'scribble-watch-restart))
+              (should-not (process-live-p proc))
+              (setq proc (scribble--watch-process))
+              (should (process-live-p proc))
+              (should (equal (process-get proc 'scribble-args) '("--html")))
               (scribble-watch-stop)
               (should (scribble-test-wait-for
                        (lambda () (not (process-live-p proc))) nil 5))
