@@ -335,6 +335,21 @@ right before that bracket are included, as they may span lines, as in
         (goto-char up))
       (line-beginning-position))))
 
+(defconst scribble--comment-token-kinds
+  '(comment sexp-comment sexp-comment-body)
+  "`racket-token' kinds that mark commented-out text.
+Line comments (\"@//\", \"@;\") are `comment'; block comments
+\(\"@//{...}\", \"@;{...}\") mark their contents `sexp-comment-body'.")
+
+(defun scribble--in-comment-p (pos)
+  "Non-nil when `racket-hash-lang-mode' lexed POS as part of a comment.
+Uses the `racket-token' property hash-lang puts on each token before
+running font-lock keywords; text without it counts as not commented."
+  (let ((kinds (get-text-property pos 'racket-token)))
+    (and (vectorp kinds)
+         (seq-some (lambda (k) (memq k scribble--comment-token-kinds))
+                   kinds))))
+
 (defun scribble--make-body-matcher (name-rx)
   "Return a font-lock matcher for @NAME-RX ARGS {BODY}.
 ARGS is any sequence of \"[...]\" (Racket) and \"(...)\" (Rhombus) groups.
@@ -347,7 +362,12 @@ refontifies just the changed text (or the changed tokens), without
 `font-lock-extend-region-functions'.  So a pass starts searching from
 `scribble--search-start' of the region start, skips forms that end
 before the region, and clips the rest to it -- re-applying a `prepend'
-face to text outside the region would stack duplicates."
+face to text outside the region would stack duplicates.
+
+Forms inside comments are skipped (see `scribble--in-comment-p'), and
+comments inside a body are left out of its face (see
+`scribble--prepend-face-outside-comments'), so commented-out text never
+gets a face, however the region was chosen."
   (let ((rx (concat "@" name-rx "\\_>"))
         (pass nil))                     ; (BUFFER LIMIT START) of this pass
     (lambda (limit)
@@ -365,7 +385,9 @@ face to text outside the region would stack duplicates."
           (while (and (not found) (re-search-forward rx limit t))
             (let* ((beg (match-beginning 0))
                    (after-name (point))
-                   (open (scribble--skip-form-args limit))
+                   (commented (scribble--in-comment-p beg))
+                   (open (and (not commented)
+                              (scribble--skip-form-args limit)))
                    (close (and open
                                (condition-case nil
                                    (1- (scan-lists open 1 0))
@@ -390,6 +412,20 @@ face to text outside the region would stack duplicates."
           (setq pass nil))
         found))))
 
+(defun scribble--prepend-face-outside-comments (face)
+  "Prepend FACE to match group 1, except over commented-out text.
+A font-lock facespec: it applies FACE itself, one token at a time, and
+returns nil so font-lock adds nothing more.  This keeps a comment inside
+a styled body, as in \"@bold{a @// note\\n b}\", unstyled."
+  (let ((pos (match-beginning 1))
+        (end (match-end 1)))
+    (while (< pos end)
+      (let ((next (next-single-property-change pos 'racket-token nil end)))
+        (unless (scribble--in-comment-p pos)
+          (font-lock-prepend-text-property pos next 'face face))
+        (setq pos next))))
+  nil)
+
 (defconst scribble--semantic-font-lock-keywords
   ;; Group forms by (FACE . HIDE-MARKUP?) so each group is one regexp.
   (let ((groups '()))
@@ -407,7 +443,7 @@ face to text outside the region would stack duplicates."
               (let ((face (car (car group))))
                 ;; (hide (cdr (car group)))
                 `(,(scribble--make-body-matcher (regexp-opt (cdr group)))
-                  (1 ',face prepend)
+                  (1 (scribble--prepend-face-outside-comments ',face))
                   ;; ,@(and hide
                   ;;        '((2 (scribble--markup-facespec) prepend)
                   ;;          (3 (scribble--markup-facespec) prepend)))

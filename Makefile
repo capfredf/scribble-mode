@@ -1,5 +1,7 @@
 EMACS ?= emacs
-BATCH = $(EMACS) -Q --batch -L .
+# Optional: a racket-mode checkout, for tests using real racket-hash-lang-mode.
+RACKET_MODE ?=
+BATCH = $(EMACS) -Q --batch -L . $(if $(RACKET_MODE),-L $(RACKET_MODE))
 
 .PHONY: all compile test test-fast clean
 

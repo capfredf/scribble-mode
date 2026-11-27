@@ -301,6 +301,116 @@
     (should (scribble-test-lacks-face "never closed"
                                       'scribble-section-heading-face))))
 
+;;; Comments
+;;
+;; In `racket-hash-lang-mode' every token carries a `racket-token'
+;; property, a vector of kinds, before font-lock keywords run.  Kinds on
+;; the "@" of a form inside a comment, as hash-lang reports them:
+;;   "@// x @bold{y}", "@; x @bold{y}"   => [comment]
+;;   "@//{ @bold{y} }"                   => [at sexp-comment-body]
+;;   "@;{ @bold{y} }"                    => [parenthesis sexp-comment-body]
+
+(defmacro scribble-test-with-tokens (text tokens &rest body)
+  "Like `scribble-test-with-buffer', but first put `racket-token' props.
+TOKENS is a list of (NEEDLE KINDS): each NEEDLE's span gets KINDS."
+  (declare (indent 2) (debug t))
+  `(with-temp-buffer
+     (scribble-test-mode)
+     (insert ,text)
+     (dolist (tok ,tokens)
+       (let ((beg (scribble-test-pos (car tok))))
+         (put-text-property beg (+ beg (length (car tok)))
+                            'racket-token (cadr tok))))
+     (font-lock-mode 1)
+     (scribble-minor-mode 1)
+     (font-lock-ensure)
+     (goto-char (point-min))
+     ,@body))
+
+(ert-deftest scribble-test-in-comment-p ()
+  (with-temp-buffer
+    (insert "abcd")
+    (put-text-property 1 2 'racket-token [comment])
+    (put-text-property 2 3 'racket-token [at sexp-comment-body])
+    (put-text-property 3 4 'racket-token [at])
+    (should (scribble--in-comment-p 1))
+    (should (scribble--in-comment-p 2))
+    (should-not (scribble--in-comment-p 3))
+    (should-not (scribble--in-comment-p 4))))   ; no property at all
+
+(ert-deftest scribble-test-line-comment-skipped ()
+  (scribble-test-with-tokens "@// see @bold{hidden}\n@bold{shown}"
+      '(("@// see @bold{hidden}\n" [comment])
+        ("@bold{shown}" [at]))
+    (should (scribble-test-lacks-face "hidden" 'scribble-bold-face))
+    (should (scribble-test-face-once "shown" 'scribble-bold-face))))
+
+(ert-deftest scribble-test-block-comment-skipped ()
+  (scribble-test-with-tokens "@;{multi\n @section{Hidden} @bold{gone}}\n@bold{kept}"
+      '(("@;{" [comment])
+        ("multi\n @section{Hidden} @bold{gone}" [parenthesis sexp-comment-body])
+        ("@bold{kept}" [parenthesis]))
+    (should (scribble-test-lacks-face "Hidden" 'scribble-section-heading-face))
+    (should (scribble-test-lacks-face "gone" 'scribble-bold-face))
+    (should (scribble-test-face-once "kept" 'scribble-bold-face))))
+
+(ert-deftest scribble-test-comment-in-body ()
+  ;; A comment inside a styled body gets neither the commented-out
+  ;; form's face nor the body's; the rest of the body keeps its face.
+  (scribble-test-with-tokens "@bold{x\n  @// note @italic{y}\n  z}"
+      '(("@// note @italic{y}\n  " [comment]))
+    (should (scribble-test-lacks-face "y" 'scribble-italic-face))
+    (should (scribble-test-lacks-face "@// note @italic{y}\n  "
+                                      'scribble-bold-face))
+    (should (scribble-test-face-once "x\n  " 'scribble-bold-face))
+    (should (scribble-test-face-once "z" 'scribble-bold-face))))
+
+(ert-deftest scribble-test-comment-in-body-refontify ()
+  ;; Same after refontifying just part of the body, comment included.
+  (scribble-test-with-tokens "@section{Title @// draft\n  rest}"
+      '(("@// draft\n  " [comment]))
+    (scribble-test-refontify-needle "draft\n  rest" 2 9)
+    (should (scribble-test-lacks-face "@// draft\n  "
+                                      'scribble-section-heading-face))
+    (should (scribble-test-face-once "Title " 'scribble-section-heading-face))
+    (should (scribble-test-face-once "rest" 'scribble-section-heading-face))))
+
+(ert-deftest scribble-test-comment-skipped-on-refontify ()
+  ;; Refontifying only part of the comment never adds the face.
+  (scribble-test-with-tokens "@// see @bold{hidden} more"
+      '(("@// see @bold{hidden} more" [comment]))
+    (scribble-test-refontify-needle "hidden" 1 3)
+    (should (scribble-test-lacks-face "hidden" 'scribble-bold-face))))
+
+(ert-deftest scribble-test-hash-lang-comments ()
+  ;; End to end with the real `racket-hash-lang-mode' and its back end.
+  :tags '(:expensive)
+  (skip-unless (and (locate-library "racket-hash-lang")
+                    (executable-find "racket")))
+  (require 'racket-hash-lang)
+  (with-temp-buffer
+    (insert "#lang rhombus/scribble/manual\n"
+            "@bold{alpha}\n"
+            "@// see @bold{beta}\n"
+            "@//{ multi\n  @bold{gamma} }\n"
+            "@bold{\n  @// nested @bold{delta}\n  omega}\n")
+    (racket-hash-lang-mode)
+    (should (scribble-test-wait-for (lambda () racket--hash-lang-id) nil 120))
+    (scribble-minor-mode 1)
+    (let ((done nil))
+      (cl-letf* ((orig (symbol-function 'racket--hash-lang-tokens+fontify))
+                 ((symbol-function 'racket--hash-lang-tokens+fontify)
+                  (lambda (&rest args) (apply orig args) (setq done t))))
+        (font-lock-fontify-region (point-min) (point-max))
+        (should (scribble-test-wait-for (lambda () done) nil 30))))
+    (should (scribble-test-has-face "alpha" 'scribble-bold-face))
+    (should (scribble-test-lacks-face "beta" 'scribble-bold-face))
+    (should (scribble-test-lacks-face "gamma" 'scribble-bold-face))
+    ;; In a comment inside the outer @bold body: no face at all.
+    (should (scribble-test-lacks-face "delta" 'scribble-bold-face))
+    (should (scribble-test-lacks-face "nested" 'scribble-bold-face))
+    (should (scribble-test-has-face "omega" 'scribble-bold-face))))
+
 ;;; Imenu and outline
 
 (ert-deftest scribble-test-imenu ()
